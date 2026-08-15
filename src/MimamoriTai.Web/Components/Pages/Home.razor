@@ -341,14 +341,18 @@ else
             @foreach (var device in _model.Devices)
             {
                 var d = device;
-                <div class="device-card @(d.IsStateKnown && d.IsOn ? "on" : "off") @(d.SafetyClass == "Restricted" ? "restricted" : "")">
+                <div class="device-card @(d.IsStateKnown && d.IsOn && !d.IsStandingBy() ? "on" : "off") @(d.SafetyClass == "Restricted" ? "restricted" : "")">
                     <div class="device-head">
                         <div>
                             <strong>@d.Name</strong>
                             <span class="device-room">@d.Room</span>
                         </div>
-                        <span class="state-pill @(d.IsStateKnown && d.IsOn ? "on" : "")">@(!d.IsStateKnown ? "確認中" : d.IsOn ? "使用中" : "停止中")</span>
+                        <span class="state-pill @(d.IsStateKnown && d.IsOn && !d.IsStandingBy() ? "on" : "")">@StateLabel(d)</span>
                     </div>
+                    @if (d.IsStandingBy())
+                    {
+                        <p class="standby-note">スイッチは入っていますが、電気は使われていません</p>
+                    }
                     <p class="muted">最終利用 @FormatLocal(d.LastUsedUtc) ・ 今日 @d.TodayUsageCount 回</p>
                     <div class="device-actions">
                         <button class="secondary-button"
@@ -1597,6 +1601,17 @@ else
         PersonRole.Family => "家族",
         _ => "管理者"
     };
+
+    /// <summary>
+    /// "使用中" is what tells the family someone is up and about, so it is reserved for an
+    /// appliance that is actually drawing power. A plug left switched on with nothing
+    /// running behind it says 待機中 instead.
+    /// </summary>
+    private static string StateLabel(DeviceCard d) =>
+        !d.IsStateKnown ? "確認中"
+        : d.IsStandingBy() ? "待機中"
+        : d.IsOn ? "使用中"
+        : "停止中";
 
     private static string FormatLocal(DateTimeOffset? utc) =>
         utc is null ? "—" : HouseholdTime.ToLocal(utc.Value).ToString("M/d HH:mm");

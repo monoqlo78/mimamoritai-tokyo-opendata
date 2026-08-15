@@ -318,7 +318,12 @@ public sealed class SwitchBotDeviceProvider(
     {
         if (!string.IsNullOrWhiteSpace(body.Power))
         {
-            return (string.Equals(body.Power, "on", StringComparison.OrdinalIgnoreCase) ? "on" : "off", null);
+            // A Plug Mini reports the relay state and the wattage flowing through it in the
+            // same body. Keeping the wattage lets callers tell "switched on and actually
+            // drawing power" apart from "switched on but nothing is running" - the family
+            // reads 使用中 as a sign of life, so a relay left on at 0 W must not look the
+            // same. Devices that report no wattage simply pass null through as before.
+            return (string.Equals(body.Power, "on", StringComparison.OrdinalIgnoreCase) ? "on" : "off", body.Weight);
         }
 
         if (body.MoveDetected is { } moved)

@@ -542,6 +542,10 @@ a.ghost.small { min-height: 32px; padding: 4px 10px; font-size: 12px; }
 .device-actions { display: flex; gap: 6px; margin-top: 12px; }
 .device-actions button { flex: 1; min-height: 34px; padding: 5px 8px; font-size: 12px; }
 .restricted-note { margin: 8px 0 0; color: var(--cp-danger); font-size: 11px; }
+/* Explains 待機中: the relay is on but nothing is drawing power. Muted, not alarming - it is
+   information, not a warning. */
+.standby-note { margin: 6px 0 0; color: var(--cp-text-muted); font-size: 11px; }
+.status-copy .standby-note { font-size: 13px; }
 .permission-card { margin-top: 16px; padding: 16px; border: 1px solid var(--cp-border); border-radius: 12px; background: var(--cp-surface); }
 .permission-card h3 { margin: 0 0 4px; font-size: 14px; }
 .permission-lead { margin: 0 0 12px; font-size: 12px; color: var(--cp-muted); }

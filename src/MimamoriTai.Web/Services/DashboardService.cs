@@ -24,7 +24,23 @@ public sealed record DeviceCard(
     DateTimeOffset? LastUsedUtc,
     int TodayUsageCount,
     bool RemoteControlAllowed,
-    string SafetyClass);
+    string SafetyClass,
+    /// <summary>
+    /// Live wattage when the hub reported one, otherwise null. A Plug Mini that is switched
+    /// on but drawing 0 W is standing by, not in use - see <see cref="DeviceCardExtensions.IsStandingBy"/>.
+    /// </summary>
+    double? PowerWatts = null);
+
+public static class DeviceCardExtensions
+{
+    /// <summary>
+    /// True when the relay is on but no power is flowing. Showing that as 使用中 tells the
+    /// family someone is up and about when nothing is actually running - the appliance may
+    /// have been switched off at its own switch, or unplugged, hours ago.
+    /// </summary>
+    public static bool IsStandingBy(this DeviceCard card) =>
+        card.IsStateKnown && card.IsOn && card.PowerWatts is <= 0;
+}
 
 public sealed record TimelineItem(DateTimeOffset OccurredAtUtc, string DeviceName, string State);
 
@@ -136,7 +152,10 @@ public sealed class DashboardService(
                 lastUsed.TryGetValue(device.Id, out var last) ? last : null,
                 todayEvents.Count(e => e.DeviceId == device.Id && e.State.Equals("on", StringComparison.OrdinalIgnoreCase)),
                 device.RemoteControlAllowed,
-                device.SafetyClass.ToString()));
+                device.SafetyClass.ToString(),
+                // Only a live read carries a wattage; a state recovered from the event log
+                // leaves this null so the card falls back to the plain on/off wording.
+                power.IsOn ? status?.PowerWatts : null));
         }
 
         var deviceNames = devices.ToDictionary(d => d.Id, d => d.DisplayName);

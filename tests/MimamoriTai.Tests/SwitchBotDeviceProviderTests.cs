@@ -195,6 +195,27 @@ public class SwitchBotDeviceProviderTests
     }
 
     [Fact]
+    public async Task GetStatusAsync_Keeps_Wattage_When_Plug_Mini_Also_Reports_Power()
+    {
+        // Real Plug Minis report BOTH a relay state and the wattage. Dropping the wattage
+        // here left the dashboard unable to tell "on and running" from "on at 0 W", so a
+        // plug whose appliance had been off for hours still read 使用中.
+        var client = new FakeSwitchBotClient
+        {
+            DeviceStatusResponse = """
+                {"statusCode":100,"message":"success","body":{"deviceId":"CCCCCCCCCCCC","deviceType":"Plug Mini (JP)","power":"on","voltage":102.9,"weight":0,"electricityOfDay":0,"electricCurrent":0}}
+                """
+        };
+        var provider = Create(client);
+
+        var status = await provider.GetStatusAsync("CCCCCCCCCCCC");
+
+        Assert.NotNull(status);
+        Assert.True(status!.IsOn);
+        Assert.Equal(0, status.PowerWatts);
+    }
+
+    [Fact]
     public async Task GetStatusAsync_Returns_Null_When_StatusCode_Is_Not_100()
     {
         var client = new FakeSwitchBotClient

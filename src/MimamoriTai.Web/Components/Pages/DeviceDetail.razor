@@ -63,11 +63,15 @@ else
         </div>
     }
 
-    <section class="status-card @(_model.IsStateKnown && _model.IsOn ? "risk-low" : "")">
-        <div class="status-icon" aria-hidden="true">@(!_model.IsStateKnown ? "？" : _model.IsOn ? "✓" : "―")</div>
+    <section class="status-card @(_model.IsStateKnown && _model.IsOn && !IsStandingBy() ? "risk-low" : "")">
+        <div class="status-icon" aria-hidden="true">@(!_model.IsStateKnown ? "？" : IsStandingBy() ? "―" : _model.IsOn ? "✓" : "―")</div>
         <div class="status-copy">
             <p class="eyebrow">現在の状態</p>
-            <h2>@(!_model.IsStateKnown ? "わかりません" : _model.IsOn ? "使用中" : "停止中")</h2>
+            <h2>@(!_model.IsStateKnown ? "わかりません" : IsStandingBy() ? "待機中" : _model.IsOn ? "使用中" : "停止中")</h2>
+            @if (IsStandingBy())
+            {
+                <p class="standby-note">スイッチは入っていますが、電気は使われていません。つないだ家電の電源が切れているか、コンセントが抜けている可能性があります。</p>
+            }
             <p class="status-reason">
                 @if (_model.PowerWatts is { } watts)
                 {
@@ -655,6 +659,14 @@ else
             _ = LoadInsightAsync(_model.HouseholdId, DeviceId);
         }
     }
+
+    /// <summary>
+    /// True when the relay is on but no power is flowing. The family reads 使用中 as a sign
+    /// that someone is up and about, so a plug left switched on with nothing running behind
+    /// it must not claim that. Null wattage means the hub reported none - stay quiet then.
+    /// </summary>
+    private bool IsStandingBy() =>
+        _model is { IsStateKnown: true, IsOn: true, PowerWatts: <= 0 };
 
     /// <summary>
     /// Re-reads the appliance while the page stays open, so flipping the physical switch
