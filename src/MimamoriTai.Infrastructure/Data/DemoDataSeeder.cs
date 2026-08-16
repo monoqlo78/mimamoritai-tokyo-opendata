@@ -164,6 +164,45 @@ public static class DemoDataSeeder
         }
 
         var devices = await db.Devices.Where(d => d.HouseholdId == household.Id).ToListAsync(ct);
+
+        // A demo household created before an appliance was added to the seed list would
+        // otherwise never see it: SeedAsync returns early once the household exists, and
+        // the mock provider is not real hardware anyone can go and re-sync. Adding the
+        // missing ones here keeps a long-lived demo deployment matching the seed list.
+        var added = false;
+        foreach (var seed in MockDeviceProvider.SeedDevices)
+        {
+            var alias = MockDeviceProvider.SeedAliases[seed.ExternalDeviceId];
+            if (devices.Any(d => d.Alias == alias))
+            {
+                continue;
+            }
+
+            var device = new Device
+            {
+                HouseholdId = household.Id,
+                ExternalDeviceId = seed.ExternalDeviceId,
+                Name = seed.Name,
+                Alias = alias,
+                DeviceType = seed.DeviceType,
+                Room = seed.Room,
+                Provider = DeviceProviderKind.Mock,
+                IsEnabled = true,
+                RemoteControlAllowed = true,
+                SafetyClass = DeviceSafetyPolicy.Classify(seed.DeviceType),
+                CreatedAtUtc = clock.GetUtcNow()
+            };
+
+            db.Devices.Add(device);
+            devices.Add(device);
+            added = true;
+        }
+
+        if (added)
+        {
+            await db.SaveChangesAsync(ct);
+        }
+
         var livingLight = devices.FirstOrDefault(d => d.Alias == "living-light");
         var bedroomLight = devices.FirstOrDefault(d => d.Alias == "bedroom-light");
         var fan = devices.FirstOrDefault(d => d.Alias == "living-fan");
