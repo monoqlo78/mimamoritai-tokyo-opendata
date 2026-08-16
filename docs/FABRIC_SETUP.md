@@ -71,9 +71,11 @@
 
   取り込みロール（`Eventhouse:PlugMiniTableName`/`PlugMiniMappingName` に書き込むプリンシパル）の権限確認は未実施です。取り込みが動いていることは `SwitchBotPlugReadings | summarize count()` で確認できます。
 
-## 0-2. HeatReadings テーブル（オープンデータの暑さ指数）
+## 0-2. HeatReadings テーブル（オープンデータの屋外環境）
 
-熱中症ガード（`docs/OPENDATA.md`）が使う**屋外の暑さ指数（WBGT）を時系列で残す**テーブルです。世帯にも機器にも紐づかない都市規模のオープンデータなので、`SwitchBotPlugReadings` の派生ではなく独立したテーブルにしています（分析側は時刻で join します）。実装は `EventhouseHeatReadingStreamPublisher`、Azure SQL側の正データは `HeatReading` エンティティ（`Core/Domain/Entities.cs`）です。
+熱中症ガードと寒さガード（`docs/OPENDATA.md`）が使う**屋外の環境を時系列で残す**テーブルです。世帯にも機器にも紐づかない都市規模のオープンデータなので、`SwitchBotPlugReadings` の派生ではなく独立したテーブルにしています（分析側は時刻で join します）。実装は `EventhouseHeatReadingStreamPublisher`、Azure SQL側の正データは `HeatReading` エンティティ（`Core/Domain/Entities.cs`）です。
+
+環境省のWBGTフィードは4月下旬〜10月下旬しか配信されないため、**11月〜3月は `wbgt` / `level` が null になります**。この5ヶ月間もテーブルが空にならないよう、通年配信される気象庁AMeDASの気温から算出した寒さ区分（`coldLevel`）を同じ行に持たせています。冬のクエリは `wbgt` ではなく `coldLevel` を見てください。
 
 - **テーブル名**: `HeatReadings`（`Eventhouse:HeatTableName`、既定値）
 - **マッピング名**: `HeatReadingsMapping`（`Eventhouse:HeatMappingName`、既定値）
@@ -84,14 +86,16 @@
   | `readingId` | guid | 一意なレコードID（`HeatReading.Id`） |
   | `pointCode` | string | 環境省の観測地点番号（東京は `44132`。`OpenData:PointCode`） |
   | `areaName` | string | 地点名（例: 東京） |
-  | `wbgt` | real | 暑さ指数（WBGT、℃） |
+  | `wbgt` | real (nullable) | 暑さ指数（WBGT、℃）。**WBGTフィードが止まる11月〜3月は null** |
   | `level` | int | `HeatAlertLevel`（1=ほぼ安全 … 5=危険）の数値 |
   | `levelText` | string | 同じ区分の日本語ラベル。KQL や Data Agent が環境省の閾値を持たずに「厳重警戒」で集計できるよう非正規化しています |
+  | `coldLevel` | int (nullable) | `ColdAlertLevel`（1=穏やか / 2=肌寒い / 3=冷え込み / 4=厳しい冷え込み）。気温が取れた時だけ入ります |
+  | `coldLevelText` | string (nullable) | 同じ区分の日本語ラベル |
   | `temperatureC` | real (nullable) | 気象庁AMeDASの気温（℃）。品質フラグが0以外のときは null |
   | `humidityPercent` | real (nullable) | 同・相対湿度（%） |
   | `observedAtUtc` | datetime | 観測・予測時刻（UTC） |
 
-- **重複排除キー**: Azure SQL側は `(PointCode, ObservedAtUtc)` に一意インデックスを張っています。プロバイダは `OpenData:CacheMinutes` の間ずっと同じ予測列を返すため、これがないと同じ観測が何度も積み上がります。
+- **重複排除キー**: Azure SQL側は `(PointCode, ObservedAtUtc)` に一意インデックスを張っています。観測時刻キーは**通年配信されるAMeDASの10分刻みを優先**し、AMeDASが取れなかった時だけWBGTの予測時刻にフォールバックします。プロバイダは `OpenData:CacheMinutes` の間ずっと同じ予測列を返すため、これがないと同じ観測が何度も積み上がります。
 - **公開タイミング**: `PlugMiniReading` と同じく `PublishedToStreamAtUtc` が null の行だけを `HeatReadingService.PublishUnpublishedBatchAsync` がバッチ送信し、**成功した行にだけ**タイムスタンプを刻みます。取得と送信は `HeatReadingCaptureBackgroundService` が同じ周期で回しますが呼び出しは別々なので、Fabric が落ちていてもDBへの記録は残ります。
 - **Eventhouse側の作成**:
 
@@ -99,7 +103,11 @@
   .create-merge table HeatReadings (
       ReadingId: guid, PointCode: string, AreaName: string,
       Wbgt: real, Level: int, LevelText: string,
-      TemperatureC: real, HumidityPercent: real, ObservedAtUtc: datetime)
+      TemperatureC: real, HumidityPercent: real, ObservedAtUtc: datetime,
+      ColdLevel: int, ColdLevelText: string)
+
+  // 既存テーブルに寒さ2列を後から足す場合はこちら。
+  .alter-merge table HeatReadings (ColdLevel: int, ColdLevelText: string)
 
   // path は publisher が送るJSONに合わせて camelCase。
   .create-or-alter table HeatReadings ingestion json mapping "HeatReadingsMapping"
@@ -107,7 +115,8 @@
   '{"column":"AreaName","path":"$.areaName"},{"column":"Wbgt","path":"$.wbgt"},'
   '{"column":"Level","path":"$.level"},{"column":"LevelText","path":"$.levelText"},'
   '{"column":"TemperatureC","path":"$.temperatureC"},{"column":"HumidityPercent","path":"$.humidityPercent"},'
-  '{"column":"ObservedAtUtc","path":"$.observedAtUtc"}]'
+  '{"column":"ObservedAtUtc","path":"$.observedAtUtc"},'
+  '{"column":"ColdLevel","path":"$.coldLevel"},{"column":"ColdLevelText","path":"$.coldLevelText"}]'
 
   .alter table HeatReadings policy streamingingestion enable
   ```
@@ -124,6 +133,22 @@
   | join kind=inner heat on Hour
   | where Wbgt >= 28
   | project Hour, DeviceName, Watts, Wbgt, LevelText
+  | order by Hour desc
+  ```
+
+- **分析例**（冷え込んだ時間帯に暖房が使われていたか＝暖房の我慢を探す）:
+
+  ```kql
+  let cold = HeatReadings
+  | where ObservedAtUtc > ago(30d) and ColdLevel >= 3   // 冷え込み以上
+  | summarize TemperatureC = min(TemperatureC), ColdLevelText = take_any(ColdLevelText)
+      by Hour = bin(ObservedAtUtc, 1h);
+  SwitchBotPlugReadings
+  | where OccurredAtUtc > ago(30d)
+  | summarize Watts = avg(DailyEnergyWh) by DeviceName, Hour = bin(OccurredAtUtc, 1h)
+  | join kind=inner cold on Hour
+  | summarize HeatingWatts = sum(Watts) by Hour, TemperatureC, ColdLevelText
+  | where HeatingWatts < 1.0        // 冷え込んでいるのに何も動いていない時間帯
   | order by Hour desc
   ```
 
