@@ -3,6 +3,10 @@
 > 離れて暮らす家族のための、安全第一の高齢者見守りサービス
 > *An elderly-watch ("見守り") assistant for families who live apart — hackathon project.*
 
+🏛️ **都知事杯オープンデータ・ハッカソン2026 応募作品**です。環境省の暑さ指数（WBGT）と気象庁アメダスのオープンデータを家電の消費電力と突き合わせ、熱中症・ヒートショックを先回りで防ぎます。利用したオープンデータの一覧とライセンスは [docs/OPENDATA.md](docs/OPENDATA.md) にあります。
+
+> 本作は [AI HACK 2026](https://aihackathon.jp/) の提出作品から発展させたものです。AI HACK 2026 への提出時点のコードは別リポジトリ [monoqlo78/mimamoritai-careroute-ai](https://github.com/monoqlo78/mimamoritai-careroute-ai)（tag `aihack-2026-submission`）に凍結してあります。
+
 📝 開発記録（Qiita）: [離れて暮らす高齢の家族を見守るサービスを作った ― 本人は「エアコンつけて」、家族は LINE で様子がわかる（Azure + Microsoft Fabric + OrcaRouter）](https://qiita.com/monoqlo78/items/27ea5bfa760bd8e3c3b7) — 同じ内容はリポジトリ内の [docs/ARTICLE.md](docs/ARTICLE.md) にもあります。
 
 🎬 デモ動画（3分11秒・字幕＋ナレーション入り・本番環境の画面録画）: https://youtu.be/TnM-RHFZ_Lc — 原本は [docs/demo/mimamoritai-demo.mp4](docs/demo/mimamoritai-demo.mp4)、収録内容の一覧は [docs/demo/README.md](docs/demo/README.md) にあります。
