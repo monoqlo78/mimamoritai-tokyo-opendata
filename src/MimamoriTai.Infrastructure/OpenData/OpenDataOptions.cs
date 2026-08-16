@@ -45,6 +45,28 @@ public sealed class OpenDataOptions
     /// </summary>
     public string AmedasStationTableUrl { get; set; } = "https://www.jma.go.jp/bosai/amedas/const/amedastable.json";
 
+    /// <summary>
+    /// 気象庁 AMeDAS: one station's own observations, in three-hour files of ten-minute
+    /// readings. <c>{0}</c> is the point code, <c>{1}</c> the JST date as yyyyMMdd and
+    /// <c>{2}</c> the JST hour the block starts at, as one of 00/03/.../21.
+    ///
+    /// <para>
+    /// The nationwide map only ever carries the newest observation, so this is the only
+    /// way to learn what yesterday was like. Used to fill in the days before the app was
+    /// watching, which is what makes the weather overlay readable on the day a family
+    /// signs up rather than a fortnight later.
+    /// </para>
+    /// </summary>
+    public string AmedasPointHistoryUrlFormat { get; set; } =
+        "https://www.jma.go.jp/bosai/amedas/data/point/{0}/{1}_{2}.json";
+
+    /// <summary>
+    /// How many days of station history to fill in on startup. Matches the fortnight the
+    /// dashboard charts, and is the cap on how much of a public website this app will
+    /// read in one go.
+    /// </summary>
+    public int HistoryBackfillDays { get; set; } = 14;
+
     /// <summary>Observation point. 44132 is 東京 for both sources, which is why one code covers both.</summary>
     public string PointCode { get; set; } = "44132";
 

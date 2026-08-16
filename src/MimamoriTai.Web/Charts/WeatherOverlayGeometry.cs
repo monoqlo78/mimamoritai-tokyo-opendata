@@ -212,6 +212,38 @@ public static class WeatherOverlayGeometry
     }
 
     /// <summary>
+    /// One dot per observed reading.
+    ///
+    /// <para>
+    /// A polyline of a single point draws nothing at all, so a household whose weather
+    /// history has only just started collecting would see an empty frame with a
+    /// temperature axis beside it and conclude the feature was broken. Dots also mark
+    /// where the readings actually are, which matters because the line is drawn straight
+    /// across days that have none.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<(double X, double Y)> Markers(
+        IReadOnlyList<WeatherOverlayPoint> points,
+        bool high,
+        (double Low, double High) scale)
+    {
+        var dots = new List<(double X, double Y)>(points.Count);
+
+        for (var i = 0; i < points.Count; i++)
+        {
+            var value = high ? points[i].HighC : points[i].LowC;
+            if (value is null)
+            {
+                continue;
+            }
+
+            dots.Add((CenterX(i, points.Count), DegreeY(value.Value, scale)));
+        }
+
+        return dots;
+    }
+
+    /// <summary>
     /// The band between the day's low and high, closed into a shape so the swing between
     /// morning and afternoon is visible at a glance -- that swing is what a body actually
     /// has to cope with.

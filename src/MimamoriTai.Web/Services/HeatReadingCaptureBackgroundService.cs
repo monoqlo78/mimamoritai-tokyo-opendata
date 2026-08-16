@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using MimamoriTai.Core.Abstractions;
 using MimamoriTai.Core.Application;
@@ -51,6 +52,11 @@ public sealed class HeatReadingCaptureBackgroundService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            // Every cycle, not just at startup: a household may watch a station other
+            // than the configured one, and the capture below only ever reads that one.
+            // Days already collected are skipped, so in practice this re-reads today.
+            await BackfillHistoryAsync(stoppingToken);
+
             var succeeded = await RunOnceAsync(stoppingToken);
             var wait = backoff.Next(succeeded);
 
@@ -62,6 +68,73 @@ public sealed class HeatReadingCaptureBackgroundService(
             {
                 return;
             }
+        }
+    }
+
+    /// <summary>
+    /// Fills in the days before this process started, once, for every station a
+    /// household actually watches.
+    ///
+    /// <para>
+    /// The capture loop below only ever records the present moment, so on its own the
+    /// outdoor history begins when the app does. That leaves the chart that lays the
+    /// weather over a household's electricity blank for its first fortnight, and blank
+    /// again the day a family picks a nearer station -- readings for that station having
+    /// never been collected. Both are gaps in our record rather than in 気象庁's, so we
+    /// fetch what was published.
+    /// </para>
+    /// <para>
+    /// Runs before the first capture because it is the slower of the two and the screen
+    /// has nothing to show until it finishes. Failures are swallowed for the same reason
+    /// every other public-data failure is: a government website being unreachable must
+    /// not stop the watch service.
+    /// </para>
+    /// </summary>
+    private async Task BackfillHistoryAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<HeatReadingService>();
+            var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
+
+            var stations = await db.Households
+                .Where(h => h.AmedasStationCode != null && h.AmedasStationCode != "")
+                .Select(h => new { Code = h.AmedasStationCode!, Name = h.AmedasStationName })
+                .Distinct()
+                .ToListAsync(ct);
+
+            // The configured point is always included: it is what the capture loop below
+            // records against, and it is the only station a household that never chose
+            // one is charted from.
+            var targets = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [_openData.PointCode] = _openData.AreaName
+            };
+
+            foreach (var station in stations)
+            {
+                targets[station.Code] = station.Name ?? station.Code;
+            }
+
+            foreach (var (code, name) in targets)
+            {
+                var added = await service.BackfillAsync(code, name, _openData.HistoryBackfillDays, ct);
+
+                if (added > 0)
+                {
+                    logger.LogInformation(
+                        "Filled in {Added} past outdoor observation(s) for {Point} from 気象庁.", added, code);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected during shutdown.
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not fill in past outdoor observations; the chart will fill as readings arrive.");
         }
     }
 
@@ -77,9 +150,10 @@ public sealed class HeatReadingCaptureBackgroundService(
             if (advisory is null)
             {
                 // Out of season the 環境省 feed is simply not published. That is not a
-                // failure, so it must not trigger the backoff.
+                // failure, so it must not trigger the backoff -- and the backfilled and
+                // cold-only rows still need publishing, so we carry on rather than
+                // leaving the whole winter's readings out of the Eventhouse.
                 logger.LogDebug("No heat advisory available for {Point}.", _openData.PointCode);
-                return true;
             }
 
             var publisher = scope.ServiceProvider.GetRequiredService<IHeatReadingStreamPublisher>();

@@ -1317,6 +1317,16 @@ main > *:nth-child(n+6) { animation-delay: 0.32s; }
 }
 .overlay-line.is-high { stroke: #ef7c3c; }
 .overlay-line.is-low { stroke: #3b82f6; }
+
+/* A zero-length stroke with a round cap: the frame is stretched to fit the card, so a
+   <circle> would render as a dash while a non-scaling stroke stays round. */
+.overlay-dot {
+    stroke-width: 5;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+}
+.overlay-dot.is-high { stroke: #ef7c3c; }
+.overlay-dot.is-low { stroke: #3b82f6; }
 .overlay-table { margin-top: 6px; font-size: 12px; color: var(--cp-text-muted); }
 .overlay-table summary { cursor: pointer; }
 .overlay-table table { width: 100%; border-collapse: collapse; margin-top: 6px; }

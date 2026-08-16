@@ -86,6 +86,22 @@
 
                 <polyline points="@G.Line(Points, true, scale)" class="overlay-line is-high" />
                 <polyline points="@G.Line(Points, false, scale)" class="overlay-line is-low" />
+
+                @* Drawn after the lines so a lone reading -- which no polyline can show --
+                   still appears, and so every reading is marked on a line that otherwise
+                   runs straight through the days that have none. These are zero-length
+                   strokes with a round cap rather than circles: the frame is stretched to
+                   the card, so a real circle would come out as a dash. *@
+                @foreach (var dot in G.Markers(Points, true, scale))
+                {
+                    <line x1="@G.F(dot.X)" y1="@G.F(dot.Y)" x2="@G.F(dot.X)" y2="@G.F(dot.Y)"
+                          class="overlay-dot is-high" />
+                }
+                @foreach (var dot in G.Markers(Points, false, scale))
+                {
+                    <line x1="@G.F(dot.X)" y1="@G.F(dot.Y)" x2="@G.F(dot.X)" y2="@G.F(dot.Y)"
+                          class="overlay-dot is-low" />
+                }
             </svg>
 
             <div class="overlay-axis-labels is-right" aria-hidden="true">

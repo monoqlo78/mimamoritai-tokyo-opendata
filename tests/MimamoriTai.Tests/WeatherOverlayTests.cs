@@ -93,6 +93,50 @@ public class WeatherOverlayGeometryTests
     }
 
     [Fact]
+    public void Marks_A_Lone_Reading_That_No_Line_Could_Show()
+    {
+        // A single day is what a household sees on the day it signs up. A polyline of one
+        // point draws nothing, so without dots the chart would come up empty next to a
+        // temperature axis and read as broken.
+        List<WeatherOverlayPoint> points = [Day("1/1", 800, 23.8, 24.7)];
+
+        var scale = WeatherOverlayGeometry.DegreeScale(points);
+
+        // One coordinate: a polyline of a single point is a valid element that paints
+        // nothing at all, which is exactly what the household saw.
+        Assert.Single(WeatherOverlayGeometry.Line(points, high: true, scale).Split(' '));
+        Assert.Single(WeatherOverlayGeometry.Markers(points, high: true, scale));
+        Assert.Single(WeatherOverlayGeometry.Markers(points, high: false, scale));
+    }
+
+    [Fact]
+    public void Does_Not_Mark_A_Day_With_No_Observation()
+    {
+        List<WeatherOverlayPoint> points =
+        [
+            Day("1/1", 800, 2, 9),
+            Day("1/2", 900, null, null),
+            Day("1/3", 700, 3, 10),
+        ];
+
+        var scale = WeatherOverlayGeometry.DegreeScale(points);
+
+        Assert.Equal(2, WeatherOverlayGeometry.Markers(points, high: true, scale).Count);
+    }
+
+    [Fact]
+    public void Puts_A_Marker_Exactly_Where_The_Line_Turns()
+    {
+        List<WeatherOverlayPoint> points = [Day("1/1", 800, 2, 9), Day("1/2", 900, 3, 10)];
+
+        var scale = WeatherOverlayGeometry.DegreeScale(points);
+        var markers = WeatherOverlayGeometry.Markers(points, high: true, scale);
+
+        Assert.Equal(WeatherOverlayGeometry.CenterX(0, 2), markers[0].X, 6);
+        Assert.Equal(WeatherOverlayGeometry.DegreeY(9, scale), markers[0].Y, 6);
+    }
+
+    [Fact]
     public void Widens_A_Flat_Week_So_Noise_Is_Not_Magnified()
     {
         List<WeatherOverlayPoint> points =

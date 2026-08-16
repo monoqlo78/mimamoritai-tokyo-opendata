@@ -24,7 +24,8 @@ public sealed class HeatReadingService(
     IAppDbContext db,
     IHeatReadingStreamPublisher publisher,
     TimeProvider clock,
-    IWeatherAdvisoryProvider? advisoryProvider = null)
+    IWeatherAdvisoryProvider? advisoryProvider = null,
+    IOutdoorHistoryProvider? historyProvider = null)
 {
     public const int DefaultBatchSize = 100;
 
@@ -82,6 +83,104 @@ public sealed class HeatReadingService(
 
         await db.SaveChangesAsync(ct);
         return advisory;
+    }
+
+    /// <summary>
+    /// A day is treated as already filled in once it holds this many observations. The
+    /// live capture cycle can only ever record about fifty in a day, so anything above
+    /// that must have come from the station's own published history.
+    /// </summary>
+    private const int FilledDayThreshold = 100;
+
+    /// <summary>
+    /// Fills in the outdoor observations for days this app was not running, from the
+    /// station's published history.
+    ///
+    /// <para>
+    /// Without this the weather history starts the moment the app does, so the chart that
+    /// lays the weather over a household's electricity has nothing to draw for its first
+    /// fortnight, and empties again the day a family moves the household to a nearer
+    /// station. Neither is a real gap in the record -- 気象庁 has published those days all
+    /// along -- so leaving the chart blank would be our omission presented as missing data.
+    /// </para>
+    /// <para>
+    /// Only days that are short of readings are fetched, and only observation times we do
+    /// not already hold are written, so restarting the app does not re-read a public
+    /// website for days it has already collected.
+    /// </para>
+    /// </summary>
+    /// <returns>How many observations were added.</returns>
+    public async Task<int> BackfillAsync(
+        string pointCode,
+        string areaName,
+        int days,
+        CancellationToken ct = default)
+    {
+        if (historyProvider is null || string.IsNullOrWhiteSpace(pointCode) || days <= 0)
+        {
+            return 0;
+        }
+
+        var today = HouseholdTime.LocalDate(clock.GetUtcNow());
+        var added = 0;
+
+        for (var back = days - 1; back >= 0; back--)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var date = today.AddDays(-back);
+            var from = HouseholdTime.StartOfLocalDayUtc(date);
+            var to = HouseholdTime.StartOfLocalDayUtc(date.AddDays(1));
+
+            var stored = await db.HeatReadings
+                .Where(r => r.PointCode == pointCode && r.ObservedAtUtc >= from && r.ObservedAtUtc < to)
+                .Select(r => r.ObservedAtUtc)
+                .ToListAsync(ct);
+
+            if (stored.Count >= FilledDayThreshold)
+            {
+                continue;
+            }
+
+            var observations = await historyProvider.GetDayAsync(pointCode, date, ct);
+            if (observations.Count == 0)
+            {
+                continue;
+            }
+
+            var known = stored.ToHashSet();
+            var now = clock.GetUtcNow();
+
+            foreach (var observation in observations)
+            {
+                if (!known.Add(observation.ObservedAtUtc))
+                {
+                    continue;
+                }
+
+                // A past observation carries no advisory: WBGT is a forecast product and
+                // the cold level is derived from a live reading, so both are recorded as
+                // unknown rather than back-calculated into something that was never issued.
+                db.HeatReadings.Add(new HeatReading
+                {
+                    PointCode = pointCode,
+                    AreaName = areaName,
+                    Wbgt = null,
+                    Level = (int)HeatAlertLevel.Unknown,
+                    ColdLevel = (int)ColdAlertLevel.Unknown,
+                    TemperatureC = observation.TemperatureC,
+                    HumidityPercent = observation.HumidityPercent,
+                    ObservedAtUtc = observation.ObservedAtUtc,
+                    ReceivedAtUtc = now
+                });
+
+                added++;
+            }
+
+            await db.SaveChangesAsync(ct);
+        }
+
+        return added;
     }
 
     /// <summary>

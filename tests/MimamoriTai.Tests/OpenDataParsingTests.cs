@@ -186,3 +186,62 @@ public class OpenDataParsingTests
         Assert.Equal(9, low);
     }
 }
+
+/// <summary>
+/// One station's own published history, which is what fills in the days before the app
+/// was watching. Fixture is the real shape of a three-hour block from 2026-08-15.
+/// </summary>
+public class AmedasHistoryParsingTests
+{
+    private const string Block = """
+        {
+          "20260815120000": {"temp":[26.5,0],"humidity":[70,0],"pressure":[1008.4,0]},
+          "20260815121000": {"temp":[26.8,0],"humidity":[69,0]},
+          "20260815122000": {"temp":[27.1,1],"humidity":[68,0]},
+          "20260815123000": {"humidity":[68,0]}
+        }
+        """;
+
+    [Fact]
+    public void Reads_Every_Ten_Minute_Temperature_In_The_Block()
+    {
+        var readings = AmedasHistoryProvider.Parse(Block);
+
+        Assert.Equal(2, readings.Count);
+        Assert.Equal(26.5, readings[0].TemperatureC);
+        Assert.Equal(70, readings[0].HumidityPercent);
+    }
+
+    /// <summary>
+    /// Keys are JST with no offset on them. Reading them as UTC would file every
+    /// observation nine hours early, which lands an afternoon reading on the previous day's
+    /// chart and quietly shifts the daily high and low.
+    /// </summary>
+    [Fact]
+    public void Treats_The_Key_As_Japan_Time()
+    {
+        var readings = AmedasHistoryProvider.Parse(Block);
+
+        Assert.Equal(
+            new DateTimeOffset(2026, 8, 15, 3, 0, 0, TimeSpan.Zero),
+            readings[0].ObservedAtUtc);
+    }
+
+    /// <summary>
+    /// A non-zero quality flag means the instrument itself is unsure. Charting it anyway
+    /// would put a spike on the screen that the station never stood behind.
+    /// </summary>
+    [Fact]
+    public void Drops_A_Reading_The_Station_Flagged_As_Suspect()
+    {
+        var readings = AmedasHistoryProvider.Parse(Block);
+
+        Assert.DoesNotContain(readings, r => r.TemperatureC == 27.1);
+    }
+
+    [Fact]
+    public void Returns_Nothing_Rather_Than_Throwing_On_A_Broken_Body()
+    {
+        Assert.Empty(AmedasHistoryProvider.Parse("<html>404</html>"));
+    }
+}

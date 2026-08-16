@@ -75,6 +75,13 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(10);
         });
 
+        // The same sources, read backwards: one station's own published history, used
+        // once at startup to fill in the days the app was not running.
+        services.AddHttpClient<IOutdoorHistoryProvider, AmedasHistoryProvider>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+
         // Singleton so the nationwide station table is fetched once a day rather than
         // once per visit to the settings screen.
         services.AddHttpClient(nameof(AmedasStationCatalog), client =>
