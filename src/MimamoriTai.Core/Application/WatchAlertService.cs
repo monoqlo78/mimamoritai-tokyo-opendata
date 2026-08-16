@@ -98,12 +98,18 @@ public sealed class WatchAlertService(
             var risk = RiskAssessmentService.Evaluate(
                 today, recent, nowLocal, leftOn, null, heat, cooling, cold, heating);
 
+            // The evening nudge is not a risk, so it is sent independently of the
+            // threshold below: a changing room can only be warmed *before* the cold
+            // morning, and by the time the risk rule can see anything it is already
+            // that morning.
+            var forecastNotice = await TrySendColdForecastAsync(householdId, resident.Id, nowLocal, risks, ct);
+
             if (risk.Level < settings.Threshold)
             {
                 return new WatchAlertOutcome(
                     WatchAlertStatus.BelowThreshold,
                     risk,
-                    "現在はリスクが低いため、アラートの送信は不要です。",
+                    forecastNotice ?? "現在はリスクが低いため、アラートの送信は不要です。",
                     null);
             }
 
@@ -154,6 +160,89 @@ public sealed class WatchAlertService(
             return new WatchAlertOutcome(WatchAlertStatus.SendFailed, null, $"アラート評価中にエラーが発生しました（{ex.GetType().Name}）。", new LineSendResult(false, ex.GetType().Name));
         }
     }
+
+    /// <summary>
+    /// Sends tomorrow morning's cold warning the night before, at most once per
+    /// forecast date.
+    ///
+    /// Heatshock is not something an alert can catch while it is happening -- by the
+    /// time the bathroom is cold the resident is already in it. The only useful form
+    /// this feature can take is prevention, which means the message has to arrive
+    /// while there is still an evening left to act in.
+    ///
+    /// Deduplication reuses the WatchAlert table with the forecast date written into
+    /// Reason. That keeps the notice in the same audit trail the family already sees
+    /// and needs no extra table; RiskLevel.Low is used so it can never be mistaken
+    /// for -- or collide with the cooldown of -- a real alert.
+    /// </summary>
+    private async Task<string?> TrySendColdForecastAsync(
+        Guid householdId,
+        Guid residentId,
+        TimeOnly nowLocal,
+        RiskAssessmentService risks,
+        CancellationToken ct)
+    {
+        // Outside the evening there is nothing to prepare yet (too early) or no
+        // evening left to prepare in (past bedtime).
+        if (nowLocal.Hour is < 18 or >= 22)
+        {
+            return null;
+        }
+
+        var forecast = await risks.GetTomorrowColdAsync(ct);
+        if (forecast?.Advice is not { } advice)
+        {
+            return null;
+        }
+
+        var marker = $"{ColdForecastReasonPrefix}{forecast.ForDateLocal:yyyy-MM-dd}";
+        var alreadySent = await db.WatchAlerts
+            .AnyAsync(a => a.PersonId == residentId && a.Reason == marker, ct);
+
+        if (alreadySent)
+        {
+            return null;
+        }
+
+        var text = $"{advice}。明日の朝の最低気温は{forecast.AreaName}で{forecast.MinTemperatureC:0.#}℃の予想です。";
+        var recipients = await recipientResolver.ResolveAsync(householdId, ct);
+        var origin = settings.PublicBaseUrl.TrimEnd('/');
+        var hasOrigin = !string.IsNullOrWhiteSpace(origin)
+            && origin.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+        var result = await PushToAllAsync(
+            recipients,
+            new LineAlertCard(
+                Title: "明日の朝の冷え込み",
+                Text: text,
+                RiskLabel: "備えておきましょう",
+                ImageUrl: hasOrigin ? $"{origin}{MascotImagePath}" : null,
+                LinkUrl: hasOrigin ? origin : null),
+            ct);
+
+        db.WatchAlerts.Add(new WatchAlert
+        {
+            HouseholdId = householdId,
+            PersonId = residentId,
+            RiskLevel = RiskLevel.Low,
+            Score = 0,
+            Reason = marker,
+            Message = text,
+            SentAtUtc = clock.GetUtcNow(),
+            Success = result.Success,
+            Error = result.Error
+        });
+        await db.SaveChangesAsync(ct);
+
+        // The row is written even when the push failed, so a broken LINE channel
+        // cannot turn into the same notice being retried every five minutes all
+        // evening.
+        return result.Success
+            ? $"明日の朝の冷え込みをお知らせしました（{text}）"
+            : null;
+    }
+
+    private const string ColdForecastReasonPrefix = "翌朝の冷え込み予報 ";
 
     /// <summary>
     /// Builds the mascot card for an alert. The image is only referenced when a public

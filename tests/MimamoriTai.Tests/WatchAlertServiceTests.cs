@@ -1,4 +1,4 @@
-using MimamoriTai.Core.Abstractions;
+﻿using MimamoriTai.Core.Abstractions;
 using MimamoriTai.Core.Application;
 using MimamoriTai.Core.Domain;
 
@@ -79,6 +79,83 @@ public class WatchAlertServiceTests
         return new(db.Context, line, clock, settings, resolver ?? FakeLineRecipientResolver.From(settings.ToId));
     }
 
+    /// <summary>19:00 JST == 10:00 UTC, inside the evening window.</summary>
+    private static readonly DateTimeOffset EveningUtc = new(2026, 1, 1, 10, 0, 0, TimeSpan.Zero);
+
+    private static FakeHeatAdvisoryProvider ColdMorningAhead(DateOnly forDate) =>
+        new(null)
+        {
+            Forecast = new ColdForecast(forDate, 2.0, ColdAlertLevel.SevereCold, "東京", "出典：気象庁")
+        };
+
+    /// <summary>
+    /// A changing room can only be warmed the evening before, so the notice has to
+    /// arrive while there is still an evening to act in -- not when the cold morning
+    /// is already underway and the resident is already in the bathroom.
+    /// </summary>
+    [Fact]
+    public async Task Warns_About_Tomorrows_Cold_Morning_The_Night_Before()
+    {
+        using var db = await SeedHighRiskHouseholdAsync();
+        var clock = new FakeTimeProvider(EveningUtc);
+        var line = new FakeLineMessagingClient();
+        var weather = ColdMorningAhead(new DateOnly(2026, 1, 2));
+        var service = new WatchAlertService(
+            db.Context, line, clock, Settings(), FakeLineRecipientResolver.From("test-family-group"), null, weather);
+
+        await service.EvaluateAsync(db.HouseholdId);
+
+        var notice = Assert.Single(line.PushedCards, c => c.Card.Title == "明日の朝の冷え込み");
+        Assert.Contains("脱衣所", notice.Card.Text);
+        Assert.Contains("2℃", notice.Card.Text);
+    }
+
+    /// <summary>
+    /// The watch job polls every few minutes all evening. Without a per-forecast-date
+    /// guard the family would get the same warning a dozen times before bedtime, which
+    /// is how a household learns to mute the account.
+    /// </summary>
+    [Fact]
+    public async Task Sends_Tomorrows_Cold_Warning_Only_Once()
+    {
+        using var db = await SeedHighRiskHouseholdAsync();
+        var clock = new FakeTimeProvider(EveningUtc);
+        var line = new FakeLineMessagingClient();
+        var weather = ColdMorningAhead(new DateOnly(2026, 1, 2));
+        var service = new WatchAlertService(
+            db.Context, line, clock, Settings(), FakeLineRecipientResolver.From("test-family-group"), null, weather);
+
+        await service.EvaluateAsync(db.HouseholdId);
+        await service.EvaluateAsync(db.HouseholdId);
+
+        Assert.Single(line.PushedCards, c => c.Card.Title == "明日の朝の冷え込み");
+    }
+
+    /// <summary>
+    /// Sent at noon the warning is useless: it is too far from the evening to be acted
+    /// on, and by the following morning it has scrolled out of the chat.
+    /// </summary>
+    [Fact]
+    public async Task Stays_Quiet_About_The_Cold_Morning_Outside_The_Evening()
+    {
+        using var db = await SeedHighRiskHouseholdAsync();
+        var clock = new FakeTimeProvider(NoActivityMorningUtc);
+        var line = new FakeLineMessagingClient();
+        var weather = ColdMorningAhead(new DateOnly(2026, 1, 2));
+        var service = new WatchAlertService(
+            db.Context, line, clock, Settings(), FakeLineRecipientResolver.From("test-family-group"), null, weather);
+
+        await service.EvaluateAsync(db.HouseholdId);
+
+        Assert.DoesNotContain(line.PushedCards, c => c.Card.Title == "明日の朝の冷え込み");
+    }
+
+    private static WatchAlertSettings Settings() => new()
+    {
+        ToId = "test-family-group",
+        Threshold = RiskLevel.Medium,
+        Cooldown = TimeSpan.FromHours(1)
+    };
     /// <summary>11:00 JST == 02:00 UTC, past the 10:00 no-activity threshold.</summary>
     private static readonly DateTimeOffset NoActivityMorningUtc = new(2026, 1, 1, 2, 0, 0, TimeSpan.Zero);
 
