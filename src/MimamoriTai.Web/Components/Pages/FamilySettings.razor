@@ -77,7 +77,7 @@ else
         <h2>気象データを受け取る場所</h2>
         <p class="muted">
             熱中症や冷え込みのお知らせは、気象庁が公開している観測所（アメダス）の気温をもとにお送りします。
-            東京都内でも場所によって数℃ちがうため、お住まいに近い観測所を選んでおくと、お知らせがより正確になります。
+            東京都内でも場所によって数℃ちがうため、お住まいの区市町村を選んでおくと、お知らせがより正確になります。
         </p>
 
         @if (_locationNotice is not null)
@@ -86,20 +86,27 @@ else
         }
 
         <p class="location-current">
-            現在の設定：<strong>@(_stationName ?? "東京（既定）")</strong>
-            @if (_stationCode is not null)
+            現在の設定：<strong>@(_areaName ?? _stationName ?? "東京（既定）")</strong>
+            @if (_stationName is not null)
             {
-                <span class="muted">（観測所番号 @_stationCode）</span>
+                <span class="muted">（気象データの取得元：@_stationName 観測所@(_stationCode is null ? null : $" / {_stationCode}")）</span>
             }
         </p>
 
         <div class="location-picker">
-            <label for="station-select">地域を選ぶ</label>
-            <select id="station-select" @onchange="OnStationSelectedAsync" disabled="@(_locationBusy || _stations.Count == 0)">
+            <label for="area-select">区市町村を選ぶ</label>
+            <select id="area-select" @onchange="OnAreaSelectedAsync" disabled="@(_locationBusy || _areas.Count == 0)">
                 <option value="">— 選択してください —</option>
-                @foreach (var station in _stations)
+                @foreach (var group in _areas.GroupBy(a => a.Group))
                 {
-                    <option value="@station.Code" selected="@(station.Code == _stationCode)">@station.Name</option>
+                    <optgroup label="@group.Key">
+                        @foreach (var area in group)
+                        {
+                            <option value="@area.Name" selected="@(area.Name == _areaName)">
+                                @area.Name@(area.Station is { } s ? $"（{s.Name} 観測所）" : null)
+                            </option>
+                        }
+                    </optgroup>
                 }
             </select>
         </div>
@@ -110,8 +117,11 @@ else
             </button>
         </div>
 
+        @* Said plainly: there is no thermometer in most wards, so the honest thing is to
+           name the station the reading actually comes from rather than imply otherwise. *@
         <p class="muted small">
-            位置情報はお使いの端末の中で最寄りの観測所を決めるためだけに使い、保存するのは観測所の名前と番号だけです。
+            気温を観測しているアメダスは都内に数か所しかないため、お選びの区市町村にいちばん近い観測所の値をお届けします。
+            位置情報はお使いの端末の中で最寄りの観測所を決めるためだけに使い、保存するのは区市町村名と観測所の名前・番号だけです。
             出典：気象庁「アメダス観測所一覧」
         </p>
     </article>
@@ -128,7 +138,8 @@ else
     private string? _lineNotice;
     private string _lineNoticeKind = "ok";
 
-    private IReadOnlyList<AmedasStation> _stations = [];
+    private IReadOnlyList<HouseholdArea> _areas = [];
+    private string? _areaName;
     private string? _stationCode;
     private string? _stationName;
     private bool _locationBusy;
@@ -160,28 +171,29 @@ else
     {
         try
         {
-            _stations = await LocationService.ListAsync();
-            var current = await LocationService.GetAsync(_householdId);
-            _stationCode = current?.Code;
-            _stationName = current?.Name;
+            _areas = await LocationService.ListAreasAsync();
+            var (areaName, station) = await LocationService.GetAsync(_householdId);
+            _areaName = areaName;
+            _stationCode = station?.Code;
+            _stationName = station?.Name;
         }
         catch (Exception ex)
         {
             // 気象庁 being unreachable must not take the whole settings page with it --
             // the LINE half above still has to work.
             Logger.LogWarning(ex, "AMeDAS station list unavailable for household {HouseholdId}.", _householdId);
-            _stations = [];
+            _areas = [];
         }
     }
 
-    private async Task OnStationSelectedAsync(ChangeEventArgs e)
+    private async Task OnAreaSelectedAsync(ChangeEventArgs e)
     {
-        if (e.Value as string is not { Length: > 0 } code || _locationBusy)
+        if (e.Value as string is not { Length: > 0 } area || _locationBusy)
         {
             return;
         }
 
-        await ApplyAsync(() => LocationService.SetByCodeAsync(_householdId, code));
+        await ApplyAsync(area, () => LocationService.SetByAreaAsync(_householdId, area));
     }
 
     private async Task UseCurrentPositionAsync()
@@ -216,11 +228,12 @@ else
             return;
         }
 
-        await ApplyAsync(() =>
-            LocationService.SetFromCoordinateAsync(_householdId, position.Latitude, position.Longitude));
+        await ApplyAsync(
+            area: null,
+            () => LocationService.SetFromCoordinateAsync(_householdId, position.Latitude, position.Longitude));
     }
 
-    private async Task ApplyAsync(Func<Task<AmedasStation?>> save)
+    private async Task ApplyAsync(string? area, Func<Task<AmedasStation?>> save)
     {
         _locationBusy = true;
         StateHasChanged();
@@ -237,7 +250,22 @@ else
             {
                 _stationCode = station.Code;
                 _stationName = station.Name;
-                _locationNotice = $"お住まいの地域を「{station.Name}」に設定しました。";
+
+                // A GPS fix does not say which ward it landed in, so the stored value is
+                // read back rather than guessed at on screen.
+                if (area is { Length: > 0 })
+                {
+                    _areaName = area;
+                }
+                else
+                {
+                    var (savedArea, _) = await LocationService.GetAsync(_householdId);
+                    _areaName = savedArea;
+                }
+
+                _locationNotice = _areaName is { Length: > 0 }
+                    ? $"お住まいの地域を「{_areaName}」に設定しました。気象データは{station.Name}観測所から受け取ります。"
+                    : $"気象データを{station.Name}観測所から受け取るように設定しました。";
                 _locationNoticeKind = "ok";
             }
         }

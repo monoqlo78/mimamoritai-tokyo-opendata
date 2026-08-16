@@ -31,6 +31,13 @@ public class Household
     /// <summary>Display name of the station, denormalised so the screen needs no lookup.</summary>
     public string? AmedasStationName { get; set; }
 
+    /// <summary>
+    /// The 区市町村 the family chose, e.g. "世田谷区". Kept alongside the station because it
+    /// is what they will recognise: telling someone in 葛飾区 that their weather comes from
+    /// "江戸川臨海" is only reassuring if the screen still says 葛飾区 next to it.
+    /// </summary>
+    public string? AreaName { get; set; }
+
     public List<Person> People { get; set; } = [];
     public List<Device> Devices { get; set; } = [];
 }

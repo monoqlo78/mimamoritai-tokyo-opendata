@@ -249,7 +249,7 @@ else
                                      AriaLabel="@ClockAriaLabel("電気が静かになった時間", d => d.SettledTime)" />
                 </div>
             </div>
-            <p class="trend-note">上のグラフは、いちばん新しい記録を右はしにして、そこから24時間さかのぼって時間ごとに並べたものです。線はいつもの平均で、棒が線から離れているほど、いつもと違う1日です。その下の2つは、その日はじめて電気が動いた時間と、最後に動いた時間を、日ごとの点で並べたものです。記録がない日は点がありません。</p>
+            <p class="trend-note">上のグラフは、いちばん新しい記録を右はしにして、そこから24時間さかのぼって時間ごとに並べたものです。<strong>点線は、直近の数日間の「同じ時刻」の平均</strong>で、棒がその線から離れているほど、いつもと違う1日です。その下の2つは、その日はじめて電気が動いた時間と、最後に動いた時間を、日ごとの点で並べたものです。記録がない日は点がありません。</p>
 
             @if (WeatherOverlay() is { Count: > 1 } overlay)
             {
@@ -1517,10 +1517,14 @@ else
     /// </summary>
     private static int CurrentHour() => HouseholdTime.LocalTime(DateTimeOffset.UtcNow).Hour;
 
+    /// <summary>
+    /// The dotted line is the same hour on other days averaged together, which is only
+    /// obvious if the legend says so -- "いつもの平均" alone reads as an overall average.
+    /// </summary>
     private string UsualLabel() =>
         _model is null || _model.HourlyEnergy.UsualDayCount == 0
-            ? "いつもの平均"
-            : $"いつもの平均（{_model.HourlyEnergy.UsualDayCount}日）";
+            ? "同じ時刻のいつもの平均"
+            : $"同じ時刻のいつもの平均（直近{_model.HourlyEnergy.UsualDayCount}日）";
 
     private string DeviceLabel(Guid deviceId) =>
         _model?.Devices.FirstOrDefault(d => d.Id == deviceId)?.Name ?? "家電";
