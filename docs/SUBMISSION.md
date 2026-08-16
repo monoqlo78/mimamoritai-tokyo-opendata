@@ -132,7 +132,7 @@
 
 | # | ファイル | 撮影方法 |
 |---|---|---|
-| 1 | `docs/captures/01-cooling-suggestion.png` | 冷房提案は暑さ指数25以上（警戒）で出る。夏の夜間など東京23区が25未満のときは、同じ東京都のWBGT予測CSV内の**小笠原（父島・地点コード44301）**を `OpenData__PointCode` で指定すれば、東京都のオープンデータのまま警戒帯を再現できる |
+| 1 | `docs/captures/01-cooling-suggestion.png` | 東京23区（44132）の実データで暑さ指数26＝警戒のとき撮影。冷房提案は**警戒（25以上）＋冷房機器が登録済みで停止中**が条件。夜間など東京が25未満のときは、同じ東京都のWBGT予測CSVに含まれる**小笠原（父島・地点コード44301）**を `OpenData__PointCode` で指定すれば、東京都のオープンデータのまま警戒帯を再現できる |
 | 2 | `docs/captures/02-power-temperature-chart.png` | トップの「電気の使用量と外の気温」を要素キャプチャ |
 | 3 | `docs/captures/03-hazard-confirm-dialog.png` | 電気ストーブの「つける」で出るハザード確認。**ブラウザ標準の confirm なので Playwright では撮れない**。Edge をアプリモード（`--app=` ＋専用 `--user-data-dir`）で開き、OSのウィンドウキャプチャで撮ること |
 
