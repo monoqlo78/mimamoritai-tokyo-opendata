@@ -38,6 +38,13 @@ public sealed class OpenDataOptions
     /// </summary>
     public string ForecastJsonUrl { get; set; } = "https://www.jma.go.jp/bosai/forecast/data/forecast/130000.json";
 
+    /// <summary>
+    /// 気象庁 AMeDAS: the published station table (coordinates and measured elements
+    /// for every station nationwide). Used to turn a phone's GPS fix into the station
+    /// nearest the house, and to list the stations around it by name.
+    /// </summary>
+    public string AmedasStationTableUrl { get; set; } = "https://www.jma.go.jp/bosai/amedas/const/amedastable.json";
+
     /// <summary>Observation point. 44132 is 東京 for both sources, which is why one code covers both.</summary>
     public string PointCode { get; set; } = "44132";
 

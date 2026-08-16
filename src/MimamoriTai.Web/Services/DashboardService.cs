@@ -63,7 +63,50 @@ public sealed record DashboardModel(
     IntegrationStatus Integrations,
     HeatAdvisory? Heat = null,
     ColdAdvisory? Cold = null,
-    ColdForecast? TomorrowCold = null);
+    ColdForecast? TomorrowCold = null,
+    IReadOnlyList<DailyOutdoorTemperature>? OutdoorTemperatures = null,
+    string? WeatherStationName = null)
+{
+    /// <summary>
+    /// The public feeds this dashboard is standing on, with whatever each one is
+    /// currently saying. Derived rather than stored so it can never drift from the
+    /// figures the rest of the card is drawn from.
+    /// </summary>
+    public IReadOnlyList<OpenDataFeedStatus> OpenDataFeeds =>
+    [
+        new("環境省 暑さ指数（WBGT）",
+            Heat is { } h ? $"{h.Wbgt:0.#} {h.LevelText}" : "4月下旬〜10月下旬のみ公開されます",
+            "環境省熱中症予防情報サイト提供",
+            Heat is not null),
+
+        new("気象庁 アメダス観測（気温・湿度）",
+            Cold is { } c
+                ? $"{c.TemperatureC:0.#}℃"
+                    + (c.HumidityPercent is { } ch ? $" 湿度{ch:0}%" : string.Empty)
+                : Heat?.TemperatureC is { } ht ? $"{ht:0.#}℃" : "取得できていません",
+            "気象庁アメダス",
+            Cold is not null || Heat?.TemperatureC is not null),
+
+        new("気象庁 天気予報（あすの最低気温）",
+            TomorrowCold is { } f ? $"{f.MinTemperatureC:0.#}℃（{f.ForDateLocal:M月d日}）" : "取得できていません",
+            "気象庁 天気予報",
+            TomorrowCold is not null),
+
+        new("気象庁 アメダス観測所一覧",
+            WeatherStationName is { Length: > 0 } s ? $"{s} を使用中" : "東京（既定）を使用中",
+            "気象庁アメダス観測所一覧",
+            true),
+
+        new("東京都 熱中症統計・世帯統計",
+            "住居内での発症 56.6%／高齢者の中等症以上 54.8%",
+            "東京都オープンデータカタログサイト（CC BY 4.0）",
+            true),
+    ];
+}
+
+/// <summary>One public feed as shown on the dashboard.</summary>
+/// <param name="IsLive">False when the source is out of season or unreachable; said plainly rather than hidden.</param>
+public sealed record OpenDataFeedStatus(string Name, string Value, string Source, bool IsLive);
 
 /// <summary>Read model builder for the Blazor dashboard.</summary>
 public sealed class DashboardService(
@@ -111,10 +154,11 @@ public sealed class DashboardService(
         var today = recent.LastOrDefault(d => d.Date == todayDate) ?? new DailyActivity(todayDate, null, null, 0, 0, 0);
         var risks = new RiskAssessmentService(db, clock, heatAdvisory);
         var heat = await risks.GetHeatAsync(ct);
-        var cold = await risks.GetColdAsync(ct);
+        var cold = await risks.GetColdAsync(household, ct);
         var tomorrowCold = heatAdvisory is null ? null : await risks.GetTomorrowColdAsync(ct);
         var cooling = await risks.LoadCoolingAsync(householdId, ct);
         var heating = await risks.LoadHeatingAsync(householdId, ct);
+        var outdoor = await risks.GetDailyTemperaturesAsync(14, household.AmedasStationCode, ct);
         var risk = RiskAssessmentService.Evaluate(
             today, recent, HouseholdTime.LocalTime(clock.GetUtcNow()), null, null, heat, cooling, cold, heating);
 
@@ -227,6 +271,8 @@ public sealed class DashboardService(
             integrations,
             heat,
             cold,
-            tomorrowCold);
+            tomorrowCold,
+            outdoor,
+            household.AmedasStationName);
     }
 }

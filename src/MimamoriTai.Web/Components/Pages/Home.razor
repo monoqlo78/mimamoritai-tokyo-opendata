@@ -250,7 +250,57 @@ else
                 </div>
             </div>
             <p class="trend-note">上のグラフは、いちばん新しい記録を右はしにして、そこから24時間さかのぼって時間ごとに並べたものです。線はいつもの平均で、棒が線から離れているほど、いつもと違う1日です。その下の2つは、その日はじめて電気が動いた時間と、最後に動いた時間を、日ごとの点で並べたものです。記録がない日は点がありません。</p>
+
+            @if (WeatherOverlay() is { Count: > 1 } overlay)
+            {
+                @* 電気と外の天気を重ねます。棒だけでは「いつもより多い / 少ない」しか
+                   分かりませんが、寒い朝に棒が伸びていなければ「暖房を我慢している」、
+                   暑い日に伸びていなければ「冷房をつけていない」と読めます。 *@
+                <div class="trend-item trend-overlay">
+                    <WeatherOverlayChart Points="overlay"
+                                         Caption="@($"電気の使用量と外の気温（{_model.WeatherStationName ?? "東京"}）")" />
+                    <p class="trend-note">
+                        気温は気象庁のアメダス観測所の記録です。寒い日や暑い日に電気の棒がのびていれば、
+                        冷暖房を使えているサインです。逆に、気温が大きく振れているのに棒が動かない日は、
+                        我慢しているかもしれません。
+                        <a href="/settings/family#location">お住まいの地域を変える</a>
+                    </p>
+                </div>
+            }
         }
+    </section>
+
+    @* オープンデータをどれだけ使っているかは、審査でも家族の安心でも「見えていること」が
+       大事です。いま実際に届いている値と観測時刻、出典をそのまま並べます。季節外で止まって
+       いるフィードも隠さず「休止中」と書きます。 *@
+    <section class="card opendata-card" aria-label="オープンデータの活用状況">
+        <div class="summary-head">
+            <div>
+                <p class="eyebrow">オープンデータ連携</p>
+                <h3>公的データで見守りを補強しています</h3>
+            </div>
+            <span class="summary-meta">@_model.OpenDataFeeds.Count(f => f.IsLive) / @_model.OpenDataFeeds.Count 稼働中</span>
+        </div>
+
+        <ul class="opendata-list">
+            @foreach (var feed in _model.OpenDataFeeds)
+            {
+                <li class="opendata-item @(feed.IsLive ? "is-live" : "is-idle")">
+                    <div class="opendata-head">
+                        <span class="opendata-dot" aria-hidden="true"></span>
+                        <span class="opendata-name">@feed.Name</span>
+                        <span class="opendata-state">@(feed.IsLive ? "受信中" : "休止中")</span>
+                    </div>
+                    <p class="opendata-value">@feed.Value</p>
+                    <p class="opendata-source">@feed.Source</p>
+                </li>
+            }
+        </ul>
+
+        <p class="trend-note">
+            気温は @(_model.WeatherStationName ?? "東京") の観測所を使っています。
+            <a href="/settings/family#location">地域の変更</a>
+        </p>
     </section>
 
 @if (_energyBreakdownOpen && _model is not null)
@@ -1420,6 +1470,40 @@ else
     /// </summary>
     private IReadOnlyList<BarChartPoint> EnergyTrend() =>
         TrendPoints(d => d.EnergyWh);
+
+    /// <summary>
+    /// The fortnight of electricity with the weather laid over it. Built from figures the
+    /// dashboard already holds, so it costs no extra query.
+    /// </summary>
+    private IReadOnlyList<WeatherOverlayPoint> WeatherOverlay()
+    {
+        if (_model is null)
+        {
+            return [];
+        }
+
+        var days = TrendDays();
+        if (days.Count == 0)
+        {
+            return [];
+        }
+
+        var today = HouseholdTime.LocalDate(DateTimeOffset.UtcNow);
+        var weather = (_model.OutdoorTemperatures ?? [])
+            .ToDictionary(t => t.Date);
+
+        return [.. days.Select(d =>
+        {
+            weather.TryGetValue(d.Date, out var outside);
+
+            return new WeatherOverlayPoint(
+                $"{d.Date.Month}/{d.Date.Day}",
+                d.EnergyWh,
+                outside?.LowC,
+                outside?.HighC,
+                d.Date == today);
+        })];
+    }
 
     private bool _energyBreakdownOpen;
 

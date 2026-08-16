@@ -94,7 +94,8 @@ public sealed class WatchAlertService(
             var cooling = await risks.LoadCoolingAsync(householdId, ct);
             var heating = await risks.LoadHeatingAsync(householdId, ct);
             var heat = await risks.GetHeatAsync(ct);
-            var cold = await risks.GetColdAsync(ct);
+            var household = await db.Households.FirstOrDefaultAsync(h => h.Id == householdId, ct);
+            var cold = await risks.GetColdAsync(household, ct);
             var risk = RiskAssessmentService.Evaluate(
                 today, recent, nowLocal, leftOn, null, heat, cooling, cold, heating);
 

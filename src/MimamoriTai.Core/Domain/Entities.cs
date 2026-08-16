@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations.Schema;
+﻿using System.ComponentModel.DataAnnotations.Schema;
 
 namespace MimamoriTai.Core.Domain;
 
@@ -14,6 +14,22 @@ public class Household
     /// a real user's production data (visible only to its <see cref="HouseholdMember"/>s).
     /// </summary>
     public DataSourceMode DataSourceMode { get; set; } = DataSourceMode.Sample;
+
+    /// <summary>
+    /// 気象庁AMeDAS observation station this household's weather is read from, e.g.
+    /// "44071" (練馬). Null means fall back to the configured default (東京).
+    ///
+    /// <para>
+    /// Tokyo is 40km across, and the difference between 練馬 and 江戸川臨海 on a summer
+    /// afternoon is real, so "the temperature outside" only means something once it is
+    /// the temperature outside <em>this</em> house. The nationwide AMeDAS map arrives
+    /// as a single file, so per-household stations cost no extra requests.
+    /// </para>
+    /// </summary>
+    public string? AmedasStationCode { get; set; }
+
+    /// <summary>Display name of the station, denormalised so the screen needs no lookup.</summary>
+    public string? AmedasStationName { get; set; }
 
     public List<Person> People { get; set; } = [];
     public List<Device> Devices { get; set; } = [];

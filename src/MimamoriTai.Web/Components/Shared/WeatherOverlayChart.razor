@@ -1,0 +1,118 @@
+@using MimamoriTai.Web.Charts
+@using G = MimamoriTai.Web.Charts.WeatherOverlayGeometry
+
+@* Electricity and weather on one plot, drawn as inline SVG like the other charts here:
+   no charting library, no JS interop, renders server-side and prints. Two scales share
+   the frame on purpose - the question this answers is not "how many watt-hours" but
+   "did the household react to the weather at all". All maths lives in
+   WeatherOverlayGeometry so it can be tested without a renderer. *@
+
+<figure class="weather-overlay @Class">
+    @if (!string.IsNullOrWhiteSpace(Caption))
+    {
+        <figcaption>
+            <span>@Caption</span>
+            <span class="overlay-legend" aria-hidden="true">
+                <span class="legend-bar">電気の使用量</span>
+                <span class="legend-band">外の気温</span>
+            </span>
+        </figcaption>
+    }
+
+    @if (Points.Count == 0)
+    {
+        <p class="empty-state">まだ記録がありません</p>
+    }
+    else
+    {
+        var max = G.MaxEnergy(Points);
+        var scale = G.DegreeScale(Points);
+        var width = G.BarWidth(Points.Count);
+
+        <div class="weather-overlay-plot">
+            <p class="overlay-scale" aria-hidden="true">
+                <span>電気 0〜@G.F(Math.Round(max))Wh</span>
+                <span>気温 @G.F(scale.Low)〜@G.F(scale.High)℃</span>
+            </p>
+
+            <svg viewBox="0 0 @G.F(G.ViewWidth) @G.F(G.ViewHeight)" role="img"
+                 aria-label="@AriaLabel" preserveAspectRatio="none">
+                <defs>
+                    @* Unique per chart: a shared id would make a second chart on the same
+                       page borrow this one's gradient. *@
+                    <linearGradient id="@($"{_id}-bar")" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" class="overlay-stop-top" />
+                        <stop offset="100%" class="overlay-stop-bottom" />
+                    </linearGradient>
+                </defs>
+
+                <line x1="0" y1="@G.F(G.PlotBottom)" x2="@G.F(G.ViewWidth)" y2="@G.F(G.PlotBottom)"
+                      class="overlay-axis" />
+
+                @for (var i = 0; i < Points.Count; i++)
+                {
+                    var point = Points[i];
+
+                    <rect x="@G.F(G.BarX(i, Points.Count))" y="@G.F(G.BarTop(point.EnergyWh, max))"
+                          width="@G.F(width)" height="@G.F(G.BarHeight(point.EnergyWh, max))"
+                          rx="0.8" class="@G.BarClass(point)" fill="url(#@($"{_id}-bar"))"
+                          style="--bar-index: @i">
+                        <title>@G.Describe(point)</title>
+                    </rect>
+                }
+
+                @{
+                    var band = G.Band(Points, scale);
+                }
+                @if (!string.IsNullOrEmpty(band))
+                {
+                    <path d="@band" class="overlay-band" />
+                }
+
+                <polyline points="@G.Line(Points, true, scale)" class="overlay-line is-high" />
+                <polyline points="@G.Line(Points, false, scale)" class="overlay-line is-low" />
+            </svg>
+        </div>
+
+        <ul class="bar-chart-labels" aria-hidden="true">
+            @foreach (var point in Points)
+            {
+                <li class="@(point.IsToday ? "is-highlighted" : null)">@point.Label</li>
+            }
+        </ul>
+
+        @* The picture is unreadable to a screen reader, so the same fortnight is offered
+           as a table rather than left out. *@
+        <details class="overlay-table">
+            <summary>数値で見る</summary>
+            <table>
+                <thead>
+                    <tr><th scope="col">日付</th><th scope="col">電気</th><th scope="col">最低</th><th scope="col">最高</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var point in Points)
+                    {
+                        <tr>
+                            <th scope="row">@point.Label</th>
+                            <td>@G.F(Math.Round(point.EnergyWh))Wh</td>
+                            <td>@(point.LowC is { } low ? $"{G.F(low)}℃" : "—")</td>
+                            <td>@(point.HighC is { } high ? $"{G.F(high)}℃" : "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </details>
+    }
+</figure>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<WeatherOverlayPoint> Points { get; set; } = [];
+
+    [Parameter] public string AriaLabel { get; set; } = "電気の使用量と外の気温の推移";
+
+    [Parameter] public string? Caption { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    private readonly string _id = $"overlay-{Guid.NewGuid():N}";
+}

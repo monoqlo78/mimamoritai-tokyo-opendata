@@ -7,6 +7,8 @@
 @inject LineLinkCodeService LineLinkCodeService
 @inject ICurrentUserAccessor CurrentUserAccessor
 @inject ILogger<FamilySettings> Logger
+@inject HouseholdLocationService LocationService
+@inject IJSRuntime JS
 
 <PageTitle>家族の追加 / 見守り隊</PageTitle>
 
@@ -69,6 +71,50 @@ else
             </button>
         </div>
     </article>
+
+    <article class="card" id="location">
+        <p class="eyebrow">お住まいの地域</p>
+        <h2>気象データを受け取る場所</h2>
+        <p class="muted">
+            熱中症や冷え込みのお知らせは、気象庁が公開している観測所（アメダス）の気温をもとにお送りします。
+            東京都内でも場所によって数℃ちがうため、お住まいに近い観測所を選んでおくと、お知らせがより正確になります。
+        </p>
+
+        @if (_locationNotice is not null)
+        {
+            <p class="notice-@_locationNoticeKind">@_locationNotice</p>
+        }
+
+        <p class="location-current">
+            現在の設定：<strong>@(_stationName ?? "東京（既定）")</strong>
+            @if (_stationCode is not null)
+            {
+                <span class="muted">（観測所番号 @_stationCode）</span>
+            }
+        </p>
+
+        <div class="location-picker">
+            <label for="station-select">地域を選ぶ</label>
+            <select id="station-select" @onchange="OnStationSelectedAsync" disabled="@(_locationBusy || _stations.Count == 0)">
+                <option value="">— 選択してください —</option>
+                @foreach (var station in _stations)
+                {
+                    <option value="@station.Code" selected="@(station.Code == _stationCode)">@station.Name</option>
+                }
+            </select>
+        </div>
+
+        <div class="device-actions">
+            <button class="secondary-button" @onclick="UseCurrentPositionAsync" disabled="@_locationBusy">
+                📍 現在地から設定する
+            </button>
+        </div>
+
+        <p class="muted small">
+            位置情報はお使いの端末の中で最寄りの観測所を決めるためだけに使い、保存するのは観測所の名前と番号だけです。
+            出典：気象庁「アメダス観測所一覧」
+        </p>
+    </article>
 }
 
 @code {
@@ -81,6 +127,13 @@ else
     private bool _lineBusy;
     private string? _lineNotice;
     private string _lineNoticeKind = "ok";
+
+    private IReadOnlyList<AmedasStation> _stations = [];
+    private string? _stationCode;
+    private string? _stationName;
+    private bool _locationBusy;
+    private string? _locationNotice;
+    private string _locationNoticeKind = "ok";
 
     protected override async Task OnInitializedAsync()
     {
@@ -96,7 +149,112 @@ else
         // would connect a relative's LINE to seeded data.
         _householdId = await HouseholdAccess.EnsureProductionHouseholdAsync("わが家");
         _isOwner = await ConnectionService.IsOwnerAsync(_householdId, user.AppUserId);
+
+        if (_isOwner)
+        {
+            await LoadLocationAsync();
+        }
     }
+
+    private async Task LoadLocationAsync()
+    {
+        try
+        {
+            _stations = await LocationService.ListAsync();
+            var current = await LocationService.GetAsync(_householdId);
+            _stationCode = current?.Code;
+            _stationName = current?.Name;
+        }
+        catch (Exception ex)
+        {
+            // 気象庁 being unreachable must not take the whole settings page with it --
+            // the LINE half above still has to work.
+            Logger.LogWarning(ex, "AMeDAS station list unavailable for household {HouseholdId}.", _householdId);
+            _stations = [];
+        }
+    }
+
+    private async Task OnStationSelectedAsync(ChangeEventArgs e)
+    {
+        if (e.Value as string is not { Length: > 0 } code || _locationBusy)
+        {
+            return;
+        }
+
+        await ApplyAsync(() => LocationService.SetByCodeAsync(_householdId, code));
+    }
+
+    private async Task UseCurrentPositionAsync()
+    {
+        if (_locationBusy)
+        {
+            return;
+        }
+
+        _locationBusy = true;
+        _locationNotice = "現在地を確認しています…";
+        _locationNoticeKind = "ok";
+        StateHasChanged();
+
+        GeoPosition? position = null;
+        try
+        {
+            position = await JS.InvokeAsync<GeoPosition?>("mimamoriUi.getPosition");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Geolocation lookup failed.");
+        }
+
+        _locationBusy = false;
+
+        if (position is null)
+        {
+            _locationNotice = "現在地を取得できませんでした。ブラウザの位置情報を許可するか、下の一覧から地域をお選びください。";
+            _locationNoticeKind = "warn";
+            StateHasChanged();
+            return;
+        }
+
+        await ApplyAsync(() =>
+            LocationService.SetFromCoordinateAsync(_householdId, position.Latitude, position.Longitude));
+    }
+
+    private async Task ApplyAsync(Func<Task<AmedasStation?>> save)
+    {
+        _locationBusy = true;
+        StateHasChanged();
+
+        try
+        {
+            var station = await save();
+            if (station is null)
+            {
+                _locationNotice = "地域を保存できませんでした。時間をおいて再度お試しください。";
+                _locationNoticeKind = "warn";
+            }
+            else
+            {
+                _stationCode = station.Code;
+                _stationName = station.Name;
+                _locationNotice = $"お住まいの地域を「{station.Name}」に設定しました。";
+                _locationNoticeKind = "ok";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Saving the AMeDAS station failed for household {HouseholdId}.", _householdId);
+            _locationNotice = "地域を保存できませんでした。時間をおいて再度お試しください。";
+            _locationNoticeKind = "warn";
+        }
+        finally
+        {
+            _locationBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private sealed record GeoPosition(double Latitude, double Longitude);
 
     private static string FormatLocal(DateTimeOffset? utc) =>
         utc is null ? "—" : HouseholdTime.ToLocal(utc.Value).ToString("M/d HH:mm");

@@ -41,6 +41,12 @@ public sealed class TokyoWeatherAdvisoryProvider(
     private ColdForecast? _cachedForecast;
     private DateTimeOffset _cachedAtUtc = DateTimeOffset.MinValue;
 
+    // The AMeDAS map is one nationwide file, so the response is kept rather than just
+    // the figure taken out of it: answering a second household's station then costs a
+    // dictionary lookup instead of another request to 気象庁.
+    private string? _cachedAmedasJson;
+    private DateTimeOffset? _cachedAmedasAtUtc;
+
     public async Task<HeatAdvisory?> GetHeatAsync(CancellationToken ct = default)
     {
         await RefreshIfStaleAsync(ct);
@@ -51,6 +57,40 @@ public sealed class TokyoWeatherAdvisoryProvider(
     {
         await RefreshIfStaleAsync(ct);
         return _cachedCold;
+    }
+
+    public async Task<ColdAdvisory?> GetColdAtAsync(
+        string stationCode, string stationName, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(stationCode) || stationCode == _options.PointCode)
+        {
+            return await GetColdAsync(ct);
+        }
+
+        await RefreshIfStaleAsync(ct);
+
+        if (_cachedAmedasJson is not { } json || _cachedAmedasAtUtc is not { } at)
+        {
+            return null;
+        }
+
+        var (temp, humidity) = ParseAmedas(json, stationCode);
+
+        // A station that reported nothing this cycle falls back to the default point
+        // rather than blanking the card: a stale figure from 3km away still describes
+        // the morning better than an empty box does.
+        if (temp is null)
+        {
+            return _cachedCold;
+        }
+
+        return new ColdAdvisory(
+            temp.Value,
+            ColdAdvisory.Classify(temp.Value),
+            humidity,
+            at,
+            string.IsNullOrWhiteSpace(stationName) ? _options.AreaName : stationName,
+            _options.AmedasAttribution);
     }
 
     public async Task<ColdForecast?> GetTomorrowColdAsync(CancellationToken ct = default)
@@ -209,6 +249,9 @@ public sealed class TokyoWeatherAdvisoryProvider(
 
             var json = await http.GetStringAsync(url, ct);
             var (temp, humidity) = ParseAmedas(json, _options.PointCode);
+
+            _cachedAmedasJson = json;
+            _cachedAmedasAtUtc = stamp.ToUniversalTime();
 
             return (temp, humidity, temp is null ? null : stamp.ToUniversalTime());
         }

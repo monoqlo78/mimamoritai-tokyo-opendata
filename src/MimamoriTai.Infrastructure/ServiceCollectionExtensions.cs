@@ -75,6 +75,14 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(10);
         });
 
+        // Singleton so the nationwide station table is fetched once a day rather than
+        // once per visit to the settings screen.
+        services.AddHttpClient(nameof(AmedasStationCatalog), client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+        services.AddSingleton<IAmedasStationCatalog, AmedasStationCatalog>();
+
         var connectionString = configuration.GetConnectionString("AppDb");
 
         services.AddDbContext<AppDbContext>(options =>
@@ -379,6 +387,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<WatchAlertService>();
         services.AddScoped<LinePostbackActionService>();
         services.AddScoped<LineLinkCodeService>();
+        services.AddScoped<HouseholdLocationService>();
 
         services.AddScoped(sp => new IntegrationStatus(
             sp.GetRequiredService<IDeviceProvider>().Kind.ToString(),

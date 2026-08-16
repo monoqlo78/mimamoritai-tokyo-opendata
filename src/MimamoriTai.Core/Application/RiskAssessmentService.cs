@@ -470,6 +470,47 @@ public sealed class RiskAssessmentService(
     /// The provider already fails soft; this is the belt to its braces, because a public
     /// data source must never be able to stop a watch assessment from completing.
     /// </summary>
+    /// <summary>
+    /// The outdoor temperature range for each of the last <paramref name="days"/> days,
+    /// taken from the 気象庁 observations this app has already recorded.
+    ///
+    /// <para>
+    /// This exists so the dashboard can lay the weather over the household's electricity
+    /// use. A bar that is taller than its neighbours means little on its own; a bar that
+    /// is taller on the coldest morning of the fortnight says the heating went on, and a
+    /// flat bar on that same morning says it did not.
+    /// </para>
+    /// </summary>
+    public async Task<IReadOnlyList<DailyOutdoorTemperature>> GetDailyTemperaturesAsync(
+        int days, string? pointCode = null, CancellationToken ct = default)
+    {
+        var today = HouseholdTime.LocalDate(DateTimeOffset.UtcNow);
+        var fromUtc = HouseholdTime.StartOfLocalDayUtc(today.AddDays(-(days - 1)));
+
+        var query = db.HeatReadings.Where(r => r.ObservedAtUtc >= fromUtc && r.TemperatureC != null);
+        if (pointCode is { Length: > 0 })
+        {
+            query = query.Where(r => r.PointCode == pointCode);
+        }
+
+        var rows = await query
+            .Select(r => new { r.ObservedAtUtc, r.TemperatureC })
+            .ToListAsync(ct);
+
+        // Bucketing happens here rather than in SQL because the day boundary is the
+        // household's local one, and translating that into a provider-agnostic
+        // expression buys nothing at this volume (a fortnight of ten-minute readings).
+        return rows
+            .GroupBy(r => HouseholdTime.LocalDate(r.ObservedAtUtc))
+            .Where(g => g.Key <= today)
+            .OrderBy(g => g.Key)
+            .Select(g => new DailyOutdoorTemperature(
+                g.Key,
+                g.Min(r => r.TemperatureC!.Value),
+                g.Max(r => r.TemperatureC!.Value)))
+            .ToList();
+    }
+
     public async Task<HeatAdvisory?> GetHeatAsync(CancellationToken ct = default)
     {
         if (heatAdvisory is null)
@@ -501,6 +542,32 @@ public sealed class RiskAssessmentService(
         try
         {
             return await heatAdvisory.GetColdAsync(ct);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The cold advisory for a household's own AMeDAS station, falling back to the
+    /// default point when the household has not set one.
+    /// </summary>
+    public async Task<ColdAdvisory?> GetColdAsync(Household? household, CancellationToken ct = default)
+    {
+        if (heatAdvisory is null)
+        {
+            return null;
+        }
+
+        if (household?.AmedasStationCode is not { Length: > 0 } code)
+        {
+            return await GetColdAsync(ct);
+        }
+
+        try
+        {
+            return await heatAdvisory.GetColdAtAsync(code, household.AmedasStationName ?? string.Empty, ct);
         }
         catch
         {
@@ -738,3 +805,6 @@ public sealed class RiskAssessmentService(
     /// </summary>
     public static readonly TimeSpan CoverageTolerance = TimeSpan.FromHours(1);
 }
+
+/// <summary>The coldest and warmest outdoor readings recorded on one local day.</summary>
+public sealed record DailyOutdoorTemperature(DateOnly Date, double LowC, double HighC);

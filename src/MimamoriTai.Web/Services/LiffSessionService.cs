@@ -81,7 +81,7 @@ public sealed class LiffSessionService(
     {
         var household = await db.Households
             .Where(h => h.Id == householdId)
-            .Select(h => h.Name)
+            .Select(h => new { h.Name, h.AmedasStationCode, h.AmedasStationName })
             .FirstOrDefaultAsync(ct);
 
         if (household is null)
@@ -103,13 +103,13 @@ public sealed class LiffSessionService(
             ?? new DailyActivity(todayDate, null, null, 0, 0, 0);
         var risks = new RiskAssessmentService(db, clock, heatAdvisory);
         var heat = await risks.GetHeatAsync(ct);
-        var cold = await risks.GetColdAsync(ct);
+        var cold = await risks.GetColdAsync(new Household { AmedasStationCode = household.AmedasStationCode, AmedasStationName = household.AmedasStationName }, ct);
         var cooling = await risks.LoadCoolingAsync(householdId, ct);
         var heating = await risks.LoadHeatingAsync(householdId, ct);
         var risk = RiskAssessmentService.Evaluate(
             today, recent, HouseholdTime.LocalTime(clock.GetUtcNow()), null, null, heat, cooling, cold, heating);
 
-        return new LiffStatus(household, residentName ?? "ご家族", risk, today);
+        return new LiffStatus(household.Name, residentName ?? "ご家族", risk, today);
     }
 
     /// <summary>

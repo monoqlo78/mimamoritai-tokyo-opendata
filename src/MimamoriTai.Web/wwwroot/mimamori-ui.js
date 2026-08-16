@@ -2,6 +2,27 @@
 // refreshes. Only called from OnAfterRenderAsync (never during prerendering),
 // so there is no need to guard against a missing `document` here.
 window.mimamoriUi = {
+    // Wraps the callback-based Geolocation API in a promise so Blazor can await it.
+    // Resolves to null on refusal, timeout or an unavailable sensor: the settings
+    // screen treats "we could not tell where you are" as an ordinary outcome and
+    // leaves the family to pick a place name instead.
+    getPosition: function () {
+        return new Promise(function (resolve) {
+            if (!navigator.geolocation) {
+                resolve(null);
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                function (position) {
+                    resolve({
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude
+                    });
+                },
+                function () { resolve(null); },
+                { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 });
+        });
+    },
     getCookie: function (name) {
         const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
         return match ? decodeURIComponent(match[1]) : null;

@@ -219,4 +219,18 @@ public interface IWeatherAdvisoryProvider
 
     /// <summary>Tomorrow's forecast low, for advice that arrives in time to act on.</summary>
     Task<ColdForecast?> GetTomorrowColdAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// The same observation, read for one household's own AMeDAS station.
+    ///
+    /// <para>
+    /// Defaulted rather than required so that a provider which only knows one place --
+    /// including every test double -- keeps working unchanged. Implementations that can
+    /// answer per station override it; the nationwide observation map is a single file,
+    /// so doing so costs no extra request.
+    /// </para>
+    /// </summary>
+    Task<ColdAdvisory?> GetColdAtAsync(
+        string stationCode, string stationName, CancellationToken ct = default) =>
+        GetColdAsync(ct);
 }

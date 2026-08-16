@@ -10,7 +10,7 @@
 | # | データ名 | 提供元 | 形式 / 更新 | 取得URL | ライセンス | アプリでの使途 |
 |---|---|---|---|---|---|---|
 | 1 | 暑さ指数（WBGT）予測値 | 環境省 熱中症予防情報サイト | CSV / 1日数回・3時間刻み | `https://www.wbgt.env.go.jp/prev15WG/dl/yohou_tokyo.csv` | 出典明記で商用利用可 | **熱中症ガードの判定軸**。東京（地点 44132）の直近の暑さ指数を読み、28以上（厳重警戒）で冷房の稼働状況と突き合わせる |
-| 2 | アメダス実況（気温・湿度） | 気象庁 | JSON / 10分ごと | `https://www.jma.go.jp/bosai/amedas/data/latest_time.txt` → `https://www.jma.go.jp/bosai/amedas/data/map/{yyyyMMddHHmmss}.json` | 出典明記で商用利用可 | 通知文の裏付け。「暑さ指数 29.4／気温 33.1℃ 湿度 62%」と**人が納得できる数字**を添える |
+| 2 | アメダス実況（気温・湿度） | 気象庁 | JSON / 10分ごと | `https://www.jma.go.jp/bosai/amedas/data/latest_time.txt` → `https://www.jma.go.jp/bosai/amedas/data/map/{yyyyMMddHHmmss}.json`（観測所一覧は `https://www.jma.go.jp/bosai/amedas/const/amedastable.json`） | 出典明記で商用利用可 | 通知文の裏付け。「暑さ指数 29.4／気温 33.1℃ 湿度 62%」と**人が納得できる数字**を添える。観測所一覧は**世帯ごとの観測所の切り替え**にも使う（設定画面の地域選択・GPSから最寄り観測所を特定）。実況マップは全国1ファイルのため、世帯ごとに観測所を変えても追加のリクエストは発生しない |
 | 3 | 天気予報（東京 130000） | 気象庁 | JSON / 1日3回 | `https://www.jma.go.jp/bosai/forecast/data/forecast/130000.json` | 出典明記で商用利用可 | **ヒートショック予報**。翌朝の予想最低気温を読み、冷え込む朝の**前夜のうちに**「脱衣所を暖めておきましょう」と伝える |
 
 取得・解析の実装は

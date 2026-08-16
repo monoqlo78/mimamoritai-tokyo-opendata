@@ -1222,3 +1222,126 @@ main > *:nth-child(n+6) { animation-delay: 0.32s; }
     .status-stage::after { animation: none !important; }
     .hero-mascot canvas, .hero-mascot .mascot-poster { transition: none; }
 }
+
+/* ---- Weather overlay chart -----------------------------------------------
+   Electricity (bars) and outdoor temperature (band + two lines) share one frame.
+   The bars borrow the accent colour used everywhere else for "the household did
+   something"; the weather is drawn in warm/cool tones so it never competes with
+   it for attention. */
+.weather-overlay { margin: 0; }
+.weather-overlay figcaption {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 6px;
+    color: var(--cp-text-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+.overlay-legend { display: inline-flex; gap: 10px; font-weight: 500; font-size: 11px; }
+.overlay-legend span::before {
+    content: '';
+    display: inline-block;
+    width: 10px;
+    height: 3px;
+    margin-right: 4px;
+    border-radius: 2px;
+    vertical-align: middle;
+}
+.overlay-legend .legend-bar::before { background: var(--cp-accent); }
+.overlay-legend .legend-band::before { background: #ef7c3c; }
+.weather-overlay-plot { display: flex; flex-direction: column; gap: 4px; }
+.overlay-scale {
+    display: flex;
+    justify-content: space-between;
+    margin: 0;
+    color: var(--cp-text-muted);
+    font-size: 10px;
+    line-height: 1;
+}
+.weather-overlay svg {
+    display: block;
+    width: 100%;
+    height: 132px;
+    overflow: visible;
+}
+.overlay-axis { stroke: var(--cp-border); stroke-width: 0.4; vector-effect: non-scaling-stroke; }
+.overlay-stop-top { stop-color: var(--cp-accent); stop-opacity: 0.5; }
+.overlay-stop-bottom { stop-color: var(--cp-accent); stop-opacity: 0.12; }
+.overlay-bar {
+    transform-box: fill-box;
+    transform-origin: bottom;
+    animation: bar-grow 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    animation-delay: calc(var(--bar-index, 0) * 30ms);
+}
+.overlay-bar.is-today { filter: saturate(1.5); }
+.overlay-band { fill: rgba(239, 124, 60, 0.14); stroke: none; }
+.overlay-line {
+    fill: none;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+.overlay-line.is-high { stroke: #ef7c3c; }
+.overlay-line.is-low { stroke: #3b82f6; }
+.overlay-table { margin-top: 6px; font-size: 12px; color: var(--cp-text-muted); }
+.overlay-table summary { cursor: pointer; }
+.overlay-table table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.overlay-table th, .overlay-table td { padding: 3px 4px; text-align: right; font-weight: 500; }
+.overlay-table th[scope='row'] { text-align: left; }
+.overlay-table thead th { color: var(--cp-text-muted); font-size: 11px; }
+.trend-overlay { margin-top: 14px; }
+
+/* ---- Household location ---------------------------------------------------- */
+.location-current { margin: 8px 0 4px; }
+.location-picker { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.location-picker label { font-size: 12px; font-weight: 600; color: var(--cp-text-muted); }
+.location-picker select {
+    padding: 8px 10px;
+    border: 1px solid var(--cp-border);
+    border-radius: 10px;
+    background: var(--cp-surface);
+    color: inherit;
+    font-size: 15px;
+}
+.muted.small { font-size: 11px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .overlay-bar { animation: none; }
+}
+
+/* ---- Open data panel -------------------------------------------------------
+   The point of this card is that the public data is visible, so a feed that is
+   out of season stays on the list and says so rather than disappearing. */
+.opendata-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 10px;
+    margin: 12px 0 0;
+    padding: 0;
+    list-style: none;
+}
+.opendata-item {
+    padding: 10px 12px;
+    border: 1px solid var(--cp-border);
+    border-radius: 12px;
+    background: var(--cp-surface);
+}
+.opendata-head { display: flex; align-items: center; gap: 6px; }
+.opendata-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--cp-text-muted);
+    flex: 0 0 auto;
+}
+.opendata-item.is-live .opendata-dot { background: #16a34a; }
+.opendata-name { font-size: 12px; font-weight: 600; }
+.opendata-state { margin-left: auto; font-size: 11px; color: var(--cp-text-muted); }
+.opendata-item.is-live .opendata-state { color: #15803d; }
+.opendata-value { margin: 6px 0 2px; font-size: 15px; font-weight: 600; }
+.opendata-item.is-idle .opendata-value { font-size: 12px; font-weight: 500; color: var(--cp-text-muted); }
+.opendata-source { margin: 0; font-size: 10px; color: var(--cp-text-muted); }
