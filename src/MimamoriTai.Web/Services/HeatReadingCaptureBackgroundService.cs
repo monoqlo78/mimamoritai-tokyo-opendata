@@ -162,7 +162,11 @@ public sealed class HeatReadingCaptureBackgroundService(
                 return true;
             }
 
-            var result = await service.PublishUnpublishedBatchAsync(ct: ct);
+            // Larger than the default because filling in a fortnight of ten-minute
+            // observations leaves a backlog of well over a thousand rows, and the queue
+            // is drained oldest-first: at a hundred a cycle the readings taken today
+            // would sit behind it for most of a day before reaching Fabric.
+            var result = await service.PublishUnpublishedBatchAsync(batchSize: 500, ct: ct);
 
             if (result.Attempted == 0)
             {
