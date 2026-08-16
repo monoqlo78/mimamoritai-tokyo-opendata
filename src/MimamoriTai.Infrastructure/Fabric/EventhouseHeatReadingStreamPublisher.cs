@@ -135,6 +135,8 @@ public sealed class EventhouseHeatReadingStreamPublisher(
                 wbgt = r.Wbgt,
                 level = r.Level,
                 levelText = r.LevelText,
+                coldLevel = r.ColdLevel,
+                coldLevelText = r.ColdLevelText,
                 temperatureC = r.TemperatureC,
                 humidityPercent = r.HumidityPercent,
                 observedAtUtc = r.ObservedAtUtc.ToString("o")

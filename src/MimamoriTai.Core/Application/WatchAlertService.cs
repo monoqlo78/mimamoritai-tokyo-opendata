@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using MimamoriTai.Core.Abstractions;
 using MimamoriTai.Core.Domain;
 
@@ -73,7 +73,7 @@ public sealed class WatchAlertService(
     WatchAlertSettings settings,
     ILineRecipientResolver recipientResolver,
     IAiRouterClient? ai = null,
-    IHeatAdvisoryProvider? heatAdvisory = null)
+    IWeatherAdvisoryProvider? heatAdvisory = null)
 {
     public async Task<WatchAlertOutcome> EvaluateAsync(Guid householdId, CancellationToken ct = default)
     {
@@ -92,8 +92,11 @@ public sealed class WatchAlertService(
             var risks = new RiskAssessmentService(db, clock, heatAdvisory);
             var leftOn = await risks.LoadLeftOnAsync(householdId, ct);
             var cooling = await risks.LoadCoolingAsync(householdId, ct);
+            var heating = await risks.LoadHeatingAsync(householdId, ct);
             var heat = await risks.GetHeatAsync(ct);
-            var risk = RiskAssessmentService.Evaluate(today, recent, nowLocal, leftOn, null, heat, cooling);
+            var cold = await risks.GetColdAsync(ct);
+            var risk = RiskAssessmentService.Evaluate(
+                today, recent, nowLocal, leftOn, null, heat, cooling, cold, heating);
 
             if (risk.Level < settings.Threshold)
             {

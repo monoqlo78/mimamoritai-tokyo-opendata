@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using MimamoriTai.Core.Abstractions;
 using MimamoriTai.Core.Domain;
 
@@ -46,13 +46,22 @@ public sealed record CoolingDevice(string Name, bool IsOn, double? Watts)
 }
 
 /// <summary>
+/// A heating appliance and whether it is actually warming the room right now. The same
+/// standby distinction as <see cref="CoolingDevice"/>, for the other half of the year.
+/// </summary>
+public sealed record HeatingDevice(string Name, bool IsOn, double? Watts)
+{
+    public bool IsHeating => IsOn && (Watts is null || Watts.Value > CoolingDevice.ActiveWatts);
+}
+
+/// <summary>
 /// Deterministic, rule based risk scoring. Intentionally NOT delegated to the LLM:
 /// the model may phrase the result, but never decides whether something is abnormal.
 /// </summary>
 public sealed class RiskAssessmentService(
     IAppDbContext db,
     TimeProvider clock,
-    IHeatAdvisoryProvider? heatAdvisory = null)
+    IWeatherAdvisoryProvider? heatAdvisory = null)
 {
     /// <summary>
     /// The hour by which every household is expected to have stirred. This is the
@@ -146,6 +155,13 @@ public sealed class RiskAssessmentService(
         type is DeviceType.AirConditioner or DeviceType.Fan;
 
     /// <summary>
+    /// Appliances whose job is to make a cold room survivable. An air conditioner counts
+    /// on both lists because in a Japanese home it is usually the heating too.
+    /// </summary>
+    public static bool IsHeating(DeviceType type) =>
+        type is DeviceType.AirConditioner or DeviceType.Heater;
+
+    /// <summary>
     /// The band at which a room with no cooling running stops being a comfort issue and
     /// becomes a health one. 28 is 厳重警戒 in the Ministry of the Environment's own
     /// scale, the point from which it advises avoiding heat and watching indoor
@@ -153,6 +169,14 @@ public sealed class RiskAssessmentService(
     /// ambulance calls start (東京都福祉局, 令和3年: 住居施設等 56.6%).
     /// </summary>
     public const HeatAlertLevel CoolingExpectedFrom = HeatAlertLevel.SevereWarning;
+
+    /// <summary>
+    /// The band from which a room with no heating running stops being a comfort issue.
+    /// Below 10°C outside, an unheated Japanese home struggles to hold the 18°C that
+    /// WHO's housing guideline asks for, and it is the cold room -- not the cold street
+    /// -- that puts an older person at risk of ヒートショック and 低体温症.
+    /// </summary>
+    public const ColdAlertLevel HeatingExpectedFrom = ColdAlertLevel.Cold;
 
     /// <summary>
     /// Scores the heatstroke picture: how hot it is outside (open data) against whether
@@ -195,9 +219,77 @@ public sealed class RiskAssessmentService(
         return (score, $"暑さ指数{heat.Wbgt:0.#}（{heat.LevelText}）ですが、{names}が動いていません（熱中症の恐れ）");
     }
 
-    /// <summary>How long this device may stay on before it counts as left on.</summary>
-    public static TimeSpan LeftOnLimit(DeviceType type, TimeOnly nowLocal)
+    /// <summary>
+    /// The mirror of <see cref="EvaluateHeat"/> for the other half of the year: how cold
+    /// it is outside (open data) against whether anything in the house is heating.
+    ///
+    /// <para>
+    /// This is the rule the service exists for in winter. A resident who is quietly
+    /// going without heating -- to save money, or because turning it on stopped feeling
+    /// worth the bother -- looks completely normal from the outside and completely
+    /// normal in every other signal we hold. The one place it shows is the draw, which
+    /// is exactly what we are already watching, and no camera is needed to see it.
+    /// </para>
+    ///
+    /// <para>
+    /// Silent unless the household registered a heating appliance, for the same reason
+    /// as the heat rule: telling a family "no heater is running" when they never told us
+    /// about one is noise, and noise is what stops alerts being read.
+    /// </para>
+    /// </summary>
+    internal static (int Score, string? Reason) EvaluateCold(
+        ColdAdvisory? cold,
+        IReadOnlyList<HeatingDevice>? heating)
     {
+        if (cold is null || cold.Level < HeatingExpectedFrom)
+        {
+            return (0, null);
+        }
+
+        var known = heating ?? [];
+        if (known.Count == 0)
+        {
+            return (0, $"気温{cold.TemperatureC:0.#}℃（{cold.LevelText}）です。暖房機器が未登録のため室内の状況は確認できません");
+        }
+
+        if (known.Any(d => d.IsHeating))
+        {
+            return (0, null);
+        }
+
+        var names = string.Join("・", known.Select(d => d.Name).Distinct().Take(2));
+
+        // 厳しい冷え込み stands alone for the same reason 危険 does on the heat side: the
+        // harm here is a fall in the bath or a night the resident does not wake from,
+        // and neither gives us a second signal to wait for.
+        var score = cold.Level >= ColdAlertLevel.SevereCold ? 60 : 45;
+
+        return (score, $"気温{cold.TemperatureC:0.#}℃（{cold.LevelText}）ですが、{names}が動いていません（ヒートショック・低体温症の恐れ）");
+    }
+
+    /// <summary>
+    /// How long a warming appliance may run on a cold day before it counts as left on.
+    ///
+    /// <para>
+    /// The two-hour heat limit exists because a heater left running is a fire risk. But
+    /// applied literally it would report a household every winter evening for the crime
+    /// of being warm, and an alert that fires nightly is one the family stops opening --
+    /// which costs them the night it matters. When the open data says it is genuinely
+    /// cold, a heater that is running is doing its job, so the limit stretches to cover
+    /// an evening while still catching one left on unattended overnight.
+    /// </para>
+    /// </summary>
+    public static readonly TimeSpan WarmingLeftOnLimit = TimeSpan.FromHours(8);
+
+    /// <summary>How long this device may stay on before it counts as left on.</summary>
+    public static TimeSpan LeftOnLimit(
+        DeviceType type, TimeOnly nowLocal, ColdAlertLevel cold = ColdAlertLevel.Unknown)
+    {
+        if (IsHeating(type) && cold >= HeatingExpectedFrom)
+        {
+            return WarmingLeftOnLimit;
+        }
+
         if (IsHeatProducing(type))
         {
             return HeatLeftOnLimit;
@@ -214,7 +306,9 @@ public sealed class RiskAssessmentService(
         IReadOnlyList<LeftOnDevice>? leftOn = null,
         IReadOnlyList<FlatPowerDevice>? flatPower = null,
         HeatAdvisory? heat = null,
-        IReadOnlyList<CoolingDevice>? cooling = null)
+        IReadOnlyList<CoolingDevice>? cooling = null,
+        ColdAdvisory? cold = null,
+        IReadOnlyList<HeatingDevice>? heating = null)
     {
         var score = 0;
         var reasons = new List<string>();
@@ -259,7 +353,7 @@ public sealed class RiskAssessmentService(
         // Left-on appliances. Only the single worst offender adds to the score, so a
         // house with several lights on doesn't inflate the level past a real emergency.
         var worst = (leftOn ?? [])
-            .Where(d => d.On >= LeftOnLimit(d.DeviceType, nowLocal))
+            .Where(d => d.On >= LeftOnLimit(d.DeviceType, nowLocal, cold?.Level ?? ColdAlertLevel.Unknown))
             .OrderByDescending(d => IsHeatProducing(d.DeviceType))
             .ThenByDescending(d => d.On)
             .FirstOrDefault();
@@ -313,6 +407,14 @@ public sealed class RiskAssessmentService(
             reasons.Add(heatReason);
         }
 
+        // The same question asked of the cold half of the year.
+        var (coldScore, coldReason) = EvaluateCold(cold, heating);
+        score += coldScore;
+        if (coldReason is not null)
+        {
+            reasons.Add(coldReason);
+        }
+
         var level = score switch
         {
             >= 60 => RiskLevel.High,
@@ -337,8 +439,10 @@ public sealed class RiskAssessmentService(
 
         var leftOn = await LoadLeftOnAsync(householdId, ct);
         var cooling = await LoadCoolingAsync(householdId, ct);
+        var heating = await LoadHeatingAsync(householdId, ct);
         var heat = await GetHeatAsync(ct);
-        var result = Evaluate(today, recent, nowLocal, leftOn, null, heat, cooling);
+        var cold = await GetColdAsync(ct);
+        var result = Evaluate(today, recent, nowLocal, leftOn, null, heat, cooling, cold, heating);
 
         var resident = await db.People
             .Where(p => p.HouseholdId == householdId && p.Role == PersonRole.Resident)
@@ -375,7 +479,49 @@ public sealed class RiskAssessmentService(
 
         try
         {
-            return await heatAdvisory.GetCurrentAsync(ct);
+            return await heatAdvisory.GetHeatAsync(ct);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Fetches the current cold advisory, treating any failure as "we do not know".
+    /// Same belt-and-braces as <see cref="GetHeatAsync"/>.
+    /// </summary>
+    public async Task<ColdAdvisory?> GetColdAsync(CancellationToken ct = default)
+    {
+        if (heatAdvisory is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await heatAdvisory.GetColdAsync(ct);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Tomorrow morning's forecast low, for the evening notice. Same fail-soft contract:
+    /// a forecast we could not fetch is simply a notice we do not send.
+    /// </summary>
+    public async Task<ColdForecast?> GetTomorrowColdAsync(CancellationToken ct = default)
+    {
+        if (heatAdvisory is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await heatAdvisory.GetTomorrowColdAsync(ct);
         }
         catch
         {
@@ -457,6 +603,42 @@ public sealed class RiskAssessmentService(
         }
 
         return cooling;
+    }
+
+    /// <summary>
+    /// The heating counterpart of <see cref="LoadCoolingAsync"/>, so the cold rule can
+    /// tell a heater that is warming the room from one that is merely switched on at
+    /// the wall.
+    /// </summary>
+    public async Task<IReadOnlyList<HeatingDevice>> LoadHeatingAsync(
+        Guid householdId, CancellationToken ct = default)
+    {
+        var devices = await db.Devices
+            .Where(d => d.HouseholdId == householdId && d.IsEnabled)
+            .ToListAsync(ct);
+
+        var heating = new List<HeatingDevice>();
+        var since = clock.GetUtcNow() - ReadingFreshness;
+
+        foreach (var device in devices.Where(d => IsHeating(d.DeviceType)))
+        {
+            var last = await db.DeviceEvents
+                .Where(e => e.DeviceId == device.Id && e.EventType == "PowerState")
+                .OrderByDescending(e => e.OccurredAtUtc)
+                .FirstOrDefaultAsync(ct);
+
+            var isOn = last is not null && last.State.Equals("on", StringComparison.OrdinalIgnoreCase);
+
+            var watts = await db.PlugMiniReadings
+                .Where(r => r.DeviceId == device.Id && r.ApproxWatts != null && r.OccurredAtUtc >= since)
+                .OrderByDescending(r => r.OccurredAtUtc)
+                .Select(r => r.ApproxWatts)
+                .FirstOrDefaultAsync(ct);
+
+            heating.Add(new HeatingDevice(device.DisplayName, isOn, watts));
+        }
+
+        return heating;
     }
 
     /// <summary>

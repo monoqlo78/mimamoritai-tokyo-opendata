@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using MimamoriTai.Core.Abstractions;
 using MimamoriTai.Core.Application;
 using MimamoriTai.Core.Domain;
@@ -29,18 +29,27 @@ public sealed class FakeHeatReadingStreamPublisher : IHeatReadingStreamPublisher
     }
 }
 
-/// <summary>Returns a fixed advisory (or nothing), like the real provider does out of season.</summary>
-public sealed class FakeHeatAdvisoryProvider(HeatAdvisory? advisory) : IHeatAdvisoryProvider
+/// <summary>Returns fixed advisories (or nothing), like the real provider does out of season.</summary>
+public sealed class FakeHeatAdvisoryProvider(HeatAdvisory? advisory) : IWeatherAdvisoryProvider
 {
     public int Calls { get; private set; }
 
     public HeatAdvisory? Advisory { get; set; } = advisory;
 
-    public Task<HeatAdvisory?> GetCurrentAsync(CancellationToken ct = default)
+    public ColdAdvisory? Cold { get; set; }
+
+    public ColdForecast? Forecast { get; set; }
+
+    public Task<HeatAdvisory?> GetHeatAsync(CancellationToken ct = default)
     {
         Calls++;
         return Task.FromResult(Advisory);
     }
+
+    public Task<ColdAdvisory?> GetColdAsync(CancellationToken ct = default) => Task.FromResult(Cold);
+
+    public Task<ColdForecast?> GetTomorrowColdAsync(CancellationToken ct = default) =>
+        Task.FromResult(Forecast);
 }
 
 public class HeatReadingServiceTests

@@ -32,6 +32,12 @@ public sealed class OpenDataOptions
     /// </summary>
     public string AmedasMapUrlFormat { get; set; } = "https://www.jma.go.jp/bosai/amedas/data/map/{0}.json";
 
+    /// <summary>
+    /// 気象庁 天気予報: the three-day forecast for 東京都 (area 130000), which carries
+    /// tomorrow's expected minimum temperature. Published all year, unlike WBGT.
+    /// </summary>
+    public string ForecastJsonUrl { get; set; } = "https://www.jma.go.jp/bosai/forecast/data/forecast/130000.json";
+
     /// <summary>Observation point. 44132 is 東京 for both sources, which is why one code covers both.</summary>
     public string PointCode { get; set; } = "44132";
 
@@ -51,4 +57,10 @@ public sealed class OpenDataOptions
     public int ForecastToleranceHours { get; set; } = 3;
 
     public string Attribution { get; set; } = "出典：環境省熱中症予防情報サイト／気象庁";
+
+    /// <summary>
+    /// Credit for the sources that carry no WBGT. Kept separate so the winter card does
+    /// not credit 環境省 for a figure that came from 気象庁 alone.
+    /// </summary>
+    public string AmedasAttribution { get; set; } = "出典：気象庁";
 }

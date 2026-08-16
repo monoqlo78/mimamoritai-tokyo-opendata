@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using MimamoriTai.Core.Abstractions;
 using MimamoriTai.Core.Application;
 using MimamoriTai.Core.Domain;
@@ -50,7 +50,7 @@ public sealed class LiffSessionService(
     AppDbContext db,
     ILineIdTokenVerifier verifier,
     TimeProvider clock,
-    IHeatAdvisoryProvider? heatAdvisory = null)
+    IWeatherAdvisoryProvider? heatAdvisory = null)
 {
     public async Task<LiffSession> ResolveAsync(string? idToken, CancellationToken ct = default)
     {
@@ -103,9 +103,11 @@ public sealed class LiffSessionService(
             ?? new DailyActivity(todayDate, null, null, 0, 0, 0);
         var risks = new RiskAssessmentService(db, clock, heatAdvisory);
         var heat = await risks.GetHeatAsync(ct);
+        var cold = await risks.GetColdAsync(ct);
         var cooling = await risks.LoadCoolingAsync(householdId, ct);
+        var heating = await risks.LoadHeatingAsync(householdId, ct);
         var risk = RiskAssessmentService.Evaluate(
-            today, recent, HouseholdTime.LocalTime(clock.GetUtcNow()), null, null, heat, cooling);
+            today, recent, HouseholdTime.LocalTime(clock.GetUtcNow()), null, null, heat, cooling, cold, heating);
 
         return new LiffStatus(household, residentName ?? "ご家族", risk, today);
     }

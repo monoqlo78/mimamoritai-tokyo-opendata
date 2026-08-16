@@ -400,11 +400,17 @@ public class HeatReading
 
     public string AreaName { get; set; } = string.Empty;
 
-    /// <summary>暑さ指数 (WBGT) in degrees Celsius.</summary>
-    public double Wbgt { get; set; }
+    /// <summary>暑さ指数 (WBGT) in degrees Celsius. Null out of season: the 環境省 series
+    /// is only published from late April to late October, and the row still matters in
+    /// winter for the temperature it carries.</summary>
+    public double? Wbgt { get; set; }
 
     /// <summary>The 環境省 five-band classification of <see cref="Wbgt"/>, stored as its int value.</summary>
     public int Level { get; set; }
+
+    /// <summary>Our own cold banding of <see cref="TemperatureC"/>, stored as its int value.
+    /// Zero means unknown, exactly as <see cref="Level"/> does for heat.</summary>
+    public int ColdLevel { get; set; }
 
     public double? TemperatureC { get; set; }
     public double? HumidityPercent { get; set; }

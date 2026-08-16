@@ -1,4 +1,4 @@
-using Azure.Core;
+﻿using Azure.Core;
 using Azure.Identity;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -70,7 +70,7 @@ public static class ServiceCollectionExtensions
         // Registered unconditionally because it needs no credentials at all -- the
         // provider itself returns null out of season or when the source is down, so the
         // rest of the app never has to know whether the figure was available.
-        services.AddHttpClient<IHeatAdvisoryProvider, TokyoHeatAdvisoryProvider>(client =>
+        services.AddHttpClient<IWeatherAdvisoryProvider, TokyoWeatherAdvisoryProvider>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(10);
         });

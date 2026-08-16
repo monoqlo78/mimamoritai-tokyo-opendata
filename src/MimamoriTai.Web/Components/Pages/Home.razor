@@ -140,7 +140,45 @@ else
                             @($" 湿度{h:0}%")
                         }
                     </span>
+                    @if (heat.Advice is { } heatAdvice)
+                    {
+                        <span class="heat-advice">@heatAdvice</span>
+                    }
                     <span class="heat-source">@heat.Attribution</span>
+                </p>
+            }
+            else if (_model.Cold is { } cold)
+            {
+                @* Winter has no 暑さ指数 to show -- WBGT is only published from late April
+                   to late October -- so the same card falls back to the year-round
+                   observation rather than going blank for five months. *@
+                <p class="heat-note cold-@cold.Level.ToString().ToLowerInvariant()"
+                   title="@cold.Attribution">
+                    <span class="heat-pill">気温 @cold.TemperatureC.ToString("0.#")℃ @cold.LevelText</span>
+                    <span class="heat-detail">
+                        @cold.AreaName
+                        @if (cold.HumidityPercent is { } ch)
+                        {
+                            @($" 湿度{ch:0}%")
+                        }
+                    </span>
+                    @if (cold.Advice is { } coldAdvice)
+                    {
+                        <span class="heat-advice">@coldAdvice</span>
+                    }
+                    <span class="heat-source">@cold.Attribution</span>
+                </p>
+            }
+            @if (_model.TomorrowCold?.Advice is { } tomorrowAdvice)
+            {
+                @* Said the evening before, because warming a changing room is something
+                   you can only do before the cold morning, not during it. *@
+                <p class="heat-note cold-forecast" title="@_model.TomorrowCold.Attribution">
+                    <span class="heat-pill">
+                        あす朝の最低 @_model.TomorrowCold.MinTemperatureC.ToString("0.#")℃
+                    </span>
+                    <span class="heat-advice">@tomorrowAdvice</span>
+                    <span class="heat-source">@_model.TomorrowCold.Attribution</span>
                 </p>
             }
         </div>

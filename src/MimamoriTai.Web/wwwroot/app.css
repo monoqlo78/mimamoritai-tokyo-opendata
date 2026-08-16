@@ -556,6 +556,15 @@ a.ghost.small { min-height: 32px; padding: 4px 10px; font-size: 12px; }
 .heat-note.heat-warning .heat-pill { background: rgba(245, 158, 11, 0.16); color: #b45309; }
 .heat-note.heat-severewarning .heat-pill { background: rgba(234, 88, 12, 0.18); color: #c2410c; }
 .heat-note.heat-danger .heat-pill { background: rgba(220, 38, 38, 0.18); color: #b91c1c; }
+/* The cold half of the year. Blues rather than the heat scale's ambers, so a glance at
+   the card says which risk it is talking about before any of the words are read. */
+.heat-note.cold-chilly .heat-pill { background: rgba(56, 189, 248, 0.16); color: #0369a1; }
+.heat-note.cold-cold .heat-pill { background: rgba(37, 99, 235, 0.16); color: #1d4ed8; }
+.heat-note.cold-severecold .heat-pill { background: rgba(30, 64, 175, 0.20); color: #1e3a8a; }
+.heat-note.cold-forecast .heat-pill { background: rgba(99, 102, 241, 0.16); color: #4338ca; }
+/* The one line that tells the resident what to actually do. Kept a step larger and
+   darker than the figures beside it: the number is context, this is the message. */
+.heat-advice { flex: 1 0 100%; color: var(--cp-text); font-size: 13px; line-height: 1.5; }
 .permission-card { margin-top: 16px; padding: 16px; border: 1px solid var(--cp-border); border-radius: 12px; background: var(--cp-surface); }
 .permission-card h3 { margin: 0 0 4px; font-size: 14px; }
 .permission-lead { margin: 0 0 12px; font-size: 12px; color: var(--cp-muted); }
