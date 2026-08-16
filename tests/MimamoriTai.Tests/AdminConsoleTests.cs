@@ -354,4 +354,69 @@ public class AdminConsoleTests
         Assert.Equal(0, usage.Failures);
         Assert.Null(usage.LastError);
     }
+
+    /// <summary>
+    /// The console once showed "デバイス 1" for a household that plainly had two plugs on
+    /// the dashboard. One had gone inactive, and a single number could not say so -- it read
+    /// as "the second plug never registered". Registered and still-running are now separate.
+    /// </summary>
+    [Fact]
+    public async Task LoadAsync_SeparatesRegisteredDevicesFromRunningOnes()
+    {
+        var live = new Device
+        {
+            ExternalDeviceId = "plug-76",
+            Name = "プラグミニ76",
+            Alias = "plug-76",
+            DeviceType = DeviceType.Plug,
+            Room = "リビング",
+            Provider = DeviceProviderKind.SwitchBot,
+            RemoteControlAllowed = false,
+            SafetyClass = SafetyClass.Guarded,
+            IsActive = true,
+        };
+        using var testDb = await new TestDb().SeedAsync(live);
+
+        testDb.Context.Devices.Add(new Device
+        {
+            HouseholdId = testDb.HouseholdId,
+            ExternalDeviceId = "plug-92",
+            Name = "プラグミニ92",
+            Alias = "plug-92",
+            DeviceType = DeviceType.Plug,
+            Room = "寝室",
+            Provider = DeviceProviderKind.SwitchBot,
+            RemoteControlAllowed = false,
+            SafetyClass = SafetyClass.Guarded,
+            IsActive = false,
+        });
+        await testDb.Context.SaveChangesAsync();
+
+        var admin = FakeCurrentUserAccessor.User(Guid.NewGuid(), "運用者");
+        var console = Console(testDb, Access(admin, new AdminOptions(), new AuthOptions()));
+
+        var model = await console.LoadAsync();
+        Assert.NotNull(model);
+
+        var row = Assert.Single(model.Households);
+        Assert.Equal(2, row.DeviceCount);
+        Assert.Equal(1, row.ActiveDeviceCount);
+        Assert.Equal(2, model.DeviceCount);
+        Assert.Equal(1, model.ActiveDeviceCount);
+    }
+
+    [Fact]
+    public async Task LoadAsync_CountsEveryDevice_WhenNoneHaveDroppedOut()
+    {
+        using var testDb = new TestDb();
+        await testDb.SeedAsync(TestDb.Light());
+
+        var admin = FakeCurrentUserAccessor.User(Guid.NewGuid(), "運用者");
+        var console = Console(testDb, Access(admin, new AdminOptions(), new AuthOptions()));
+
+        var model = await console.LoadAsync();
+        Assert.NotNull(model);
+
+        Assert.Equal(model.DeviceCount, model.ActiveDeviceCount);
+    }
 }

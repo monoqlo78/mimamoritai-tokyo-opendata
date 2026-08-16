@@ -1,7 +1,9 @@
 @page "/admin"
 @rendermode InteractiveServer
+@using MimamoriTai.Core.Application
 @using MimamoriTai.Core.Domain
 @using MimamoriTai.Web.Services
+@implements IDisposable
 @inject AdminConsoleService Console
 
 <PageTitle>運用コンソール / 見守り隊</PageTitle>
@@ -15,6 +17,9 @@
         </div>
     </div>
     <div class="topbar-actions">
+        <button class="ghost small" @onclick="RefreshAsync" disabled="@_refreshing">
+            @(_refreshing ? "更新中…" : "🔄 最新にする")
+        </button>
         <a class="ghost small" href="/">← ダッシュボードに戻る</a>
     </div>
 </header>
@@ -59,8 +64,10 @@ else
         </div>
         <div class="kpi">
             <span class="kpi-label">デバイス</span>
-            <span class="kpi-value">@_model.DeviceCount</span>
-            <span class="kpi-sub">全世帯合計</span>
+            <span class="kpi-value">@_model.ActiveDeviceCount</span>
+            <span class="kpi-sub">
+                稼働中／登録 @_model.DeviceCount 台
+            </span>
         </div>
         <div class="kpi">
             <span class="kpi-label">通知（@(_model.WindowDays)日）</span>
@@ -106,7 +113,13 @@ else
                             <td>@(row.DataSourceMode == DataSourceMode.Sample ? "デモ" : "本番")</td>
                             <td>@row.MemberCount</td>
                             <td>@row.ResidentCount</td>
-                            <td>@row.DeviceCount</td>
+                            <td>
+                                @row.ActiveDeviceCount
+                                @if (row.DeviceCount != row.ActiveDeviceCount)
+                                {
+                                    <span class="muted small">／登録 @row.DeviceCount</span>
+                                }
+                            </td>
                             <td>@FormatTime(row.LastEventUtc)</td>
                             <td>
                                 @SwitchBotLabel(row.SwitchBotStatus)
@@ -217,12 +230,25 @@ else
         }
     </section>
 
-    <p class="muted small">生成時刻: @FormatTime(_model.GeneratedAtUtc)（UTC）</p>
+    <p class="muted small">
+        この表の内容は <strong>@FormatTime(_model.GeneratedAtUtc)</strong> 時点のものです（日本時間）。
+        画面を開いたままにしていても自動では変わらないため、@(AutoRefreshSeconds)秒ごとに読み直しています。
+        時刻はすべて日本時間で表示しています。
+    </p>
 }
 
 @code {
+    /// <summary>
+    /// An operations console that silently keeps showing the moment it was opened is worse
+    /// than no console: an operator reads a device count from last night and concludes the
+    /// second plug never registered. So it reloads on a timer, and says when it last did.
+    /// </summary>
+    private const int AutoRefreshSeconds = 60;
+
     private AdminConsoleModel? _model;
     private bool _loading = true;
+    private bool _refreshing;
+    private Timer? _autoRefresh;
 
     protected override async Task OnInitializedAsync()
     {
@@ -230,8 +256,49 @@ else
         _loading = false;
     }
 
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || _model is null)
+        {
+            return;
+        }
+
+        _autoRefresh = new Timer(
+            _ => _ = InvokeAsync(RefreshAsync),
+            null,
+            TimeSpan.FromSeconds(AutoRefreshSeconds),
+            TimeSpan.FromSeconds(AutoRefreshSeconds));
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_refreshing)
+        {
+            return;
+        }
+
+        _refreshing = true;
+        StateHasChanged();
+
+        try
+        {
+            _model = await Console.LoadAsync();
+        }
+        finally
+        {
+            _refreshing = false;
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose() => _autoRefresh?.Dispose();
+
+    /// <summary>
+    /// Everything else in the app speaks 日本時間. A console in UTC invites an operator to
+    /// compare 08/14 10:18 here against 08/14 19:18 on the dashboard and call it a bug.
+    /// </summary>
     private static string FormatTime(DateTimeOffset? value) =>
-        value is null ? "—" : value.Value.ToString("MM/dd HH:mm");
+        value is null ? "—" : HouseholdTime.ToLocal(value.Value).ToString("MM/dd HH:mm");
 
     private static string SwitchBotLabel(SwitchBotConnectionStatus? status) => status switch
     {

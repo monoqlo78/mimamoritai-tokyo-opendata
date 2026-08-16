@@ -13,6 +13,9 @@ public sealed record AdminHouseholdRow(
     int MemberCount,
     int ResidentCount,
     int DeviceCount,
+    /// <summary>Of <see cref="DeviceCount"/>, how many are still active. A plug that has
+    /// fallen out of the SwitchBot account stays on the row but stops counting here.</summary>
+    int ActiveDeviceCount,
     DateTimeOffset? LastEventUtc,
     SwitchBotConnectionStatus? SwitchBotStatus,
     DateTimeOffset? SwitchBotLastSyncUtc,
@@ -53,6 +56,9 @@ public sealed record AdminConsoleModel(
     int ProductionHouseholdCount,
     int UserCount,
     int DeviceCount,
+    /// <summary>Active devices across every household, so a console reading of "1" can be
+    /// told apart from "2 registered, 1 of them gone quiet".</summary>
+    int ActiveDeviceCount,
     int AlertsInWindow,
     int FailedAlertsInWindow,
     int HouseholdsNeedingAttention,
@@ -115,8 +121,13 @@ public sealed class AdminConsoleService(
 
         var deviceCounts = await db.Devices
             .GroupBy(d => d.HouseholdId)
-            .Select(g => new { HouseholdId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.HouseholdId, x => x.Count, ct);
+            .Select(g => new
+            {
+                HouseholdId = g.Key,
+                Count = g.Count(),
+                Active = g.Count(d => d.IsActive)
+            })
+            .ToDictionaryAsync(x => x.HouseholdId, x => (x.Count, x.Active), ct);
 
         var lastDeviceEvents = await db.DeviceEvents
             .GroupBy(e => e.HouseholdId)
@@ -199,7 +210,8 @@ public sealed class AdminConsoleService(
                 DataSourceMode: household.DataSourceMode,
                 MemberCount: memberCounts.GetValueOrDefault(household.Id),
                 ResidentCount: residentCounts.GetValueOrDefault(household.Id),
-                DeviceCount: deviceCounts.GetValueOrDefault(household.Id),
+                DeviceCount: deviceCounts.GetValueOrDefault(household.Id).Count,
+                ActiveDeviceCount: deviceCounts.GetValueOrDefault(household.Id).Active,
                 LastEventUtc: lastEvent,
                 SwitchBotStatus: connection?.Status,
                 SwitchBotLastSyncUtc: connection?.LastSyncAtUtc,
@@ -278,6 +290,7 @@ public sealed class AdminConsoleService(
             ProductionHouseholdCount: rows.Count(r => r.DataSourceMode == DataSourceMode.Production),
             UserCount: userCount,
             DeviceCount: rows.Sum(r => r.DeviceCount),
+            ActiveDeviceCount: rows.Sum(r => r.ActiveDeviceCount),
             AlertsInWindow: rows.Sum(r => r.AlertsInWindow),
             FailedAlertsInWindow: rows.Sum(r => r.FailedAlertsInWindow),
             HouseholdsNeedingAttention: rows.Count(NeedsAttention),
