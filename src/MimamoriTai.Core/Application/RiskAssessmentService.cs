@@ -102,7 +102,7 @@ public sealed record ComfortSuggestion(
         // Heat first: it is the sharper of the two. Heatstroke indoors takes hours, not
         // days, and more than half of Tokyo's cases happen at home.
         if (heat is not null
-            && heat.Level >= RiskAssessmentService.CoolingExpectedFrom
+            && heat.Level >= RiskAssessmentService.CoolingSuggestedFrom
             && cooling is { Count: > 0 }
             && !cooling.Any(d => d.IsCooling)
             && Pick(cooling.Select(d => (d.Name, d.Alias, d.SafetyClass, d.IsOn))) is { } ac)
@@ -121,7 +121,7 @@ public sealed record ComfortSuggestion(
         }
 
         if (cold is not null
-            && cold.Level >= RiskAssessmentService.HeatingExpectedFrom
+            && cold.Level >= RiskAssessmentService.HeatingSuggestedFrom
             && heating is { Count: > 0 }
             && !heating.Any(d => d.IsHeating)
             && Pick(heating.Select(d => (d.Name, d.Alias, d.SafetyClass, d.IsOn))) is { } warmer)
@@ -287,6 +287,23 @@ public sealed class RiskAssessmentService(
     /// -- that puts an older person at risk of ヒートショック and 低体温症.
     /// </summary>
     public const ColdAlertLevel HeatingExpectedFrom = ColdAlertLevel.Cold;
+
+    /// <summary>
+    /// The band from which the dashboard offers to switch the cooling on. Deliberately
+    /// one step below <see cref="CoolingExpectedFrom"/>, because the two are not the same
+    /// act. Above 28 we interrupt a family at work with an alert, and that has to be
+    /// reserved for a health risk. Offering a button on a screen somebody chose to open
+    /// costs them nothing, and 警戒 (25) is already the band at which the Ministry of the
+    /// Environment asks older people to watch the indoor temperature.
+    /// </summary>
+    public const HeatAlertLevel CoolingSuggestedFrom = HeatAlertLevel.Warning;
+
+    /// <summary>
+    /// The same one-step-earlier offer for the cold half of the year. Below 15°C outside,
+    /// an unheated room is heading for the morning that causes ヒートショック; suggesting
+    /// the heater then is cheaper than waiting for it to become an alert.
+    /// </summary>
+    public const ColdAlertLevel HeatingSuggestedFrom = ColdAlertLevel.Chilly;
 
     /// <summary>
     /// Scores the heatstroke picture: how hot it is outside (open data) against whether

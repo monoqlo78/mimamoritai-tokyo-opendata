@@ -59,12 +59,31 @@ public class ComfortSuggestionTests
     public void Says_nothing_on_a_comfortable_day()
     {
         var suggestion = ComfortSuggestion.For(
-            Heat(24.0),
+            Heat(22.0),
             [new CoolingDevice("エアコン", IsOn: false, Watts: null, Alias: "living-ac")],
             cold: null,
             heating: null);
 
         Assert.Null(suggestion);
+    }
+
+    /// <summary>
+    /// 警戒 is below the band that raises an alert, on purpose. An alert interrupts a
+    /// family at work and is reserved for a health risk; a button on a screen somebody
+    /// opened themselves costs nothing, and this is already the band at which older
+    /// people are asked to watch the indoor temperature.
+    /// </summary>
+    [Fact]
+    public void Offers_cooling_one_band_earlier_than_the_alert()
+    {
+        var suggestion = ComfortSuggestion.For(
+            Heat(26.0),
+            [new CoolingDevice("エアコン", IsOn: false, Watts: null, Alias: "living-ac")],
+            cold: null,
+            heating: null);
+
+        Assert.NotNull(suggestion);
+        Assert.True(HeatAdvisory.Classify(26.0) < RiskAssessmentService.CoolingExpectedFrom);
     }
 
     /// <summary>
@@ -128,7 +147,7 @@ public class ComfortSuggestionTests
         var suggestion = ComfortSuggestion.For(
             heat: null,
             cooling: null,
-            Cold(6.0),
+            Cold(12.0),
             [new HeatingDevice("電気ストーブ", IsOn: false, Watts: null, Alias: "living-heater", SafetyClass: "Guarded")]);
 
         Assert.NotNull(suggestion);
