@@ -124,6 +124,25 @@ else
             <p class="eyebrow">@ResidentDisplayName(_model.ResidentName)の今日</p>
             <h2>@RiskLabel(_model.Risk.Level)</h2>
             <p class="status-reason">@_model.Risk.Reason</p>
+            @if (_model.Heat is { } heat)
+            {
+                <p class="heat-note heat-@heat.Level.ToString().ToLowerInvariant()"
+                   title="@heat.Attribution">
+                    <span class="heat-pill">暑さ指数 @heat.Wbgt.ToString("0.#") @heat.LevelText</span>
+                    <span class="heat-detail">
+                        @heat.AreaName
+                        @if (heat.TemperatureC is { } t)
+                        {
+                            @($" {t:0.#}℃")
+                        }
+                        @if (heat.HumidityPercent is { } h)
+                        {
+                            @($" 湿度{h:0}%")
+                        }
+                    </span>
+                    <span class="heat-source">@heat.Attribution</span>
+                </p>
+            }
         </div>
         <button class="secondary-button" title="現在の状態を再評価し、必要であればLINEに通知します"
                 @onclick="EvaluateAlertAsync" disabled="@_busy">

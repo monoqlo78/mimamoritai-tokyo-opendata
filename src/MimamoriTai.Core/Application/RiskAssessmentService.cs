@@ -20,10 +20,39 @@ public sealed record LeftOnDevice(string Name, DeviceType DeviceType, TimeSpan O
 public sealed record FlatPowerDevice(string Name, TimeSpan Flat, int ThresholdHours);
 
 /// <summary>
+/// A cooling appliance and whether it is actually doing anything right now.
+///
+/// <para>
+/// <paramref name="Watts"/> is what makes this rule honest. A Plug Mini reports its
+/// relay as "on" for as long as it is switched at the wall, so an air conditioner that
+/// was turned off by its remote still reads as on. Only the draw tells us whether the
+/// room is being cooled, which is the same distinction the dashboard shows as 待機中.
+/// </para>
+/// </summary>
+public sealed record CoolingDevice(string Name, bool IsOn, double? Watts)
+{
+    /// <summary>
+    /// Below this the appliance is standing by, not cooling. Set just above zero rather
+    /// than at zero because a plug reports a fraction of a watt for its own electronics.
+    /// </summary>
+    public const double ActiveWatts = 1.0;
+
+    /// <summary>
+    /// True only when we can see the room is actually being cooled. When the plug gives
+    /// us no wattage at all we fall back to the relay state: half a signal is better
+    /// than accusing a working air conditioner of being off.
+    /// </summary>
+    public bool IsCooling => IsOn && (Watts is null || Watts.Value > ActiveWatts);
+}
+
+/// <summary>
 /// Deterministic, rule based risk scoring. Intentionally NOT delegated to the LLM:
 /// the model may phrase the result, but never decides whether something is abnormal.
 /// </summary>
-public sealed class RiskAssessmentService(IAppDbContext db, TimeProvider clock)
+public sealed class RiskAssessmentService(
+    IAppDbContext db,
+    TimeProvider clock,
+    IHeatAdvisoryProvider? heatAdvisory = null)
 {
     /// <summary>
     /// The hour by which every household is expected to have stirred. This is the
@@ -112,6 +141,60 @@ public sealed class RiskAssessmentService(IAppDbContext db, TimeProvider clock)
     public static bool IsHeatProducing(DeviceType type) =>
         type is DeviceType.Heater or DeviceType.Kettle or DeviceType.CookingDevice or DeviceType.Microwave;
 
+    /// <summary>Appliances whose job is to make a hot room survivable.</summary>
+    public static bool IsCooling(DeviceType type) =>
+        type is DeviceType.AirConditioner or DeviceType.Fan;
+
+    /// <summary>
+    /// The band at which a room with no cooling running stops being a comfort issue and
+    /// becomes a health one. 28 is 厳重警戒 in the Ministry of the Environment's own
+    /// scale, the point from which it advises avoiding heat and watching indoor
+    /// temperature -- and indoors is where roughly half of Tokyo's heatstroke
+    /// ambulance calls start (東京都福祉局, 令和3年: 住居施設等 56.6%).
+    /// </summary>
+    public const HeatAlertLevel CoolingExpectedFrom = HeatAlertLevel.SevereWarning;
+
+    /// <summary>
+    /// Scores the heatstroke picture: how hot it is outside (open data) against whether
+    /// anything in the house is cooling (our own readings).
+    ///
+    /// <para>
+    /// Deliberately silent unless the household actually registered a cooling appliance.
+    /// Telling a family "no air conditioner is running" when they never told us about
+    /// one is noise, and noise is what stops alerts being read.
+    /// </para>
+    /// </summary>
+    internal static (int Score, string? Reason) EvaluateHeat(
+        HeatAdvisory? heat,
+        IReadOnlyList<CoolingDevice>? cooling)
+    {
+        if (heat is null || heat.Level < CoolingExpectedFrom)
+        {
+            return (0, null);
+        }
+
+        var known = cooling ?? [];
+        if (known.Count == 0)
+        {
+            // Worth saying, not worth scoring: we have no way to check the room.
+            return (0, $"暑さ指数{heat.Wbgt:0.#}（{heat.LevelText}）です。冷房機器が未登録のため室内の状況は確認できません");
+        }
+
+        if (known.Any(d => d.IsCooling))
+        {
+            return (0, null);
+        }
+
+        var names = string.Join("・", known.Select(d => d.Name).Distinct().Take(2));
+
+        // At 危険 this stands alone, like a heater left running: the guidance is that a
+        // resident this age can be taken ill sitting still, so waiting for a second
+        // signal is not acceptable.
+        var score = heat.Level >= HeatAlertLevel.Danger ? 60 : 45;
+
+        return (score, $"暑さ指数{heat.Wbgt:0.#}（{heat.LevelText}）ですが、{names}が動いていません（熱中症の恐れ）");
+    }
+
     /// <summary>How long this device may stay on before it counts as left on.</summary>
     public static TimeSpan LeftOnLimit(DeviceType type, TimeOnly nowLocal)
     {
@@ -129,7 +212,9 @@ public sealed class RiskAssessmentService(IAppDbContext db, TimeProvider clock)
         IReadOnlyList<DailyActivity> baseline,
         TimeOnly nowLocal,
         IReadOnlyList<LeftOnDevice>? leftOn = null,
-        IReadOnlyList<FlatPowerDevice>? flatPower = null)
+        IReadOnlyList<FlatPowerDevice>? flatPower = null,
+        HeatAdvisory? heat = null,
+        IReadOnlyList<CoolingDevice>? cooling = null)
     {
         var score = 0;
         var reasons = new List<string>();
@@ -220,6 +305,14 @@ public sealed class RiskAssessmentService(IAppDbContext db, TimeProvider clock)
             }
         }
 
+        // Heatstroke: outdoor open data crossed with whether the room is being cooled.
+        var (heatScore, heatReason) = EvaluateHeat(heat, cooling);
+        score += heatScore;
+        if (heatReason is not null)
+        {
+            reasons.Add(heatReason);
+        }
+
         var level = score switch
         {
             >= 60 => RiskLevel.High,
@@ -243,7 +336,9 @@ public sealed class RiskAssessmentService(IAppDbContext db, TimeProvider clock)
         var nowLocal = HouseholdTime.LocalTime(clock.GetUtcNow());
 
         var leftOn = await LoadLeftOnAsync(householdId, ct);
-        var result = Evaluate(today, recent, nowLocal, leftOn);
+        var cooling = await LoadCoolingAsync(householdId, ct);
+        var heat = await GetHeatAsync(ct);
+        var result = Evaluate(today, recent, nowLocal, leftOn, null, heat, cooling);
 
         var resident = await db.People
             .Where(p => p.HouseholdId == householdId && p.Role == PersonRole.Resident)
@@ -264,6 +359,28 @@ public sealed class RiskAssessmentService(IAppDbContext db, TimeProvider clock)
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Fetches the current heat advisory, treating any failure as "we do not know".
+    /// The provider already fails soft; this is the belt to its braces, because a public
+    /// data source must never be able to stop a watch assessment from completing.
+    /// </summary>
+    public async Task<HeatAdvisory?> GetHeatAsync(CancellationToken ct = default)
+    {
+        if (heatAdvisory is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await heatAdvisory.GetCurrentAsync(ct);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -302,6 +419,51 @@ public sealed class RiskAssessmentService(IAppDbContext db, TimeProvider clock)
 
         return leftOn;
     }
+
+    /// <summary>
+    /// Reads which cooling appliances the household has and whether each is actually
+    /// drawing power, so the heatstroke rule can tell a running air conditioner from one
+    /// that is merely switched on at the wall.
+    /// </summary>
+    public async Task<IReadOnlyList<CoolingDevice>> LoadCoolingAsync(
+        Guid householdId, CancellationToken ct = default)
+    {
+        var devices = await db.Devices
+            .Where(d => d.HouseholdId == householdId && d.IsEnabled)
+            .ToListAsync(ct);
+
+        var cooling = new List<CoolingDevice>();
+
+        // Only a fresh reading can speak for right now; an old one would let a plug that
+        // went offline hours ago vouch for a room nobody is measuring any more.
+        var since = clock.GetUtcNow() - ReadingFreshness;
+
+        foreach (var device in devices.Where(d => IsCooling(d.DeviceType)))
+        {
+            var last = await db.DeviceEvents
+                .Where(e => e.DeviceId == device.Id && e.EventType == "PowerState")
+                .OrderByDescending(e => e.OccurredAtUtc)
+                .FirstOrDefaultAsync(ct);
+
+            var isOn = last is not null && last.State.Equals("on", StringComparison.OrdinalIgnoreCase);
+
+            var watts = await db.PlugMiniReadings
+                .Where(r => r.DeviceId == device.Id && r.ApproxWatts != null && r.OccurredAtUtc >= since)
+                .OrderByDescending(r => r.OccurredAtUtc)
+                .Select(r => r.ApproxWatts)
+                .FirstOrDefaultAsync(ct);
+
+            cooling.Add(new CoolingDevice(device.DisplayName, isOn, watts));
+        }
+
+        return cooling;
+    }
+
+    /// <summary>
+    /// How old a wattage reading may be and still describe the present. Readings arrive
+    /// every few minutes, so half an hour absorbs a restart without going stale.
+    /// </summary>
+    public static readonly TimeSpan ReadingFreshness = TimeSpan.FromMinutes(30);
 
     /// <summary>
     /// Reads how long each device's draw has been sitting still, for the devices whose

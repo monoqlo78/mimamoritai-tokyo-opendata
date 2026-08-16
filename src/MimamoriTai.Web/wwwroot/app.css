@@ -546,6 +546,16 @@ a.ghost.small { min-height: 32px; padding: 4px 10px; font-size: 12px; }
    information, not a warning. */
 .standby-note { margin: 6px 0 0; color: var(--cp-text-muted); font-size: 11px; }
 .status-copy .standby-note { font-size: 13px; }
+/* 暑さ指数 (WBGT) from open data, shown on the hero card. The credit line is part of the
+   licence terms for the 環境省 / 気象庁 feeds, so it renders alongside the figure rather
+   than being tucked away in a tooltip. */
+.heat-note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 10px 0 0; font-size: 12px; }
+.heat-pill { padding: 3px 10px; border-radius: 999px; background: var(--cp-surface-soft); color: var(--cp-text-muted); font-weight: 600; font-size: 12px; }
+.heat-detail { color: var(--cp-text-muted); }
+.heat-source { flex: 1 0 100%; color: var(--cp-text-muted); opacity: 0.75; font-size: 10px; }
+.heat-note.heat-warning .heat-pill { background: rgba(245, 158, 11, 0.16); color: #b45309; }
+.heat-note.heat-severewarning .heat-pill { background: rgba(234, 88, 12, 0.18); color: #c2410c; }
+.heat-note.heat-danger .heat-pill { background: rgba(220, 38, 38, 0.18); color: #b91c1c; }
 .permission-card { margin-top: 16px; padding: 16px; border: 1px solid var(--cp-border); border-radius: 12px; background: var(--cp-surface); }
 .permission-card h3 { margin: 0 0 4px; font-size: 14px; }
 .permission-lead { margin: 0 0 12px; font-size: 12px; color: var(--cp-muted); }

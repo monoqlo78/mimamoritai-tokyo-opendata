@@ -60,7 +60,8 @@ public sealed record DashboardModel(
     IReadOnlyList<DailyActivity> Recent,
     HourlyEnergyProfile HourlyEnergy,
     string? LastResolvedModel,
-    IntegrationStatus Integrations);
+    IntegrationStatus Integrations,
+    HeatAdvisory? Heat = null);
 
 /// <summary>Read model builder for the Blazor dashboard.</summary>
 public sealed class DashboardService(
@@ -69,7 +70,8 @@ public sealed class DashboardService(
     IDataSourceContext dataSourceContext,
     HouseholdAccessService householdAccess,
     IntegrationStatus integrations,
-    TimeProvider clock)
+    TimeProvider clock,
+    IHeatAdvisoryProvider? heatAdvisory = null)
 {
     public async Task<Guid?> GetDefaultHouseholdIdAsync(CancellationToken ct = default) =>
         await householdAccess.ResolveDefaultAsync(ct);
@@ -105,7 +107,11 @@ public sealed class DashboardService(
         var hourly = await activity.GetHourlyEnergyAsync(householdId, 14, ct);
         var todayDate = HouseholdTime.LocalDate(clock.GetUtcNow());
         var today = recent.LastOrDefault(d => d.Date == todayDate) ?? new DailyActivity(todayDate, null, null, 0, 0, 0);
-        var risk = RiskAssessmentService.Evaluate(today, recent, HouseholdTime.LocalTime(clock.GetUtcNow()));
+        var risks = new RiskAssessmentService(db, clock, heatAdvisory);
+        var heat = await risks.GetHeatAsync(ct);
+        var cooling = await risks.LoadCoolingAsync(householdId, ct);
+        var risk = RiskAssessmentService.Evaluate(
+            today, recent, HouseholdTime.LocalTime(clock.GetUtcNow()), null, null, heat, cooling);
 
         var dayStart = HouseholdTime.StartOfLocalDayUtc(todayDate);
 
@@ -213,6 +219,7 @@ public sealed class DashboardService(
             recent,
             hourly,
             lastModel,
-            integrations);
+            integrations,
+            heat);
     }
 }

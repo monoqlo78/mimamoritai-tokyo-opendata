@@ -16,6 +16,7 @@ using MimamoriTai.Infrastructure.Data;
 using MimamoriTai.Infrastructure.Devices;
 using MimamoriTai.Infrastructure.Fabric;
 using MimamoriTai.Infrastructure.Line;
+using MimamoriTai.Infrastructure.OpenData;
 using MimamoriTai.Infrastructure.Security;
 
 namespace MimamoriTai.Infrastructure;
@@ -63,6 +64,16 @@ public static class ServiceCollectionExtensions
         services.Configure<MimamoriDataProtectionOptions>(configuration.GetSection(MimamoriDataProtectionOptions.SectionName));
         services.Configure<FabricConsoleSyncOptions>(configuration.GetSection(FabricConsoleSyncOptions.SectionName));
         services.Configure<FabricPublishOptions>(configuration.GetSection(FabricPublishOptions.SectionName));
+        services.Configure<OpenDataOptions>(configuration.GetSection(OpenDataOptions.SectionName));
+
+        // Public open data: 環境省 WBGT + 気象庁 AMeDAS, used by the heatstroke rule.
+        // Registered unconditionally because it needs no credentials at all -- the
+        // provider itself returns null out of season or when the source is down, so the
+        // rest of the app never has to know whether the figure was available.
+        services.AddHttpClient<IHeatAdvisoryProvider, TokyoHeatAdvisoryProvider>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
 
         var connectionString = configuration.GetConnectionString("AppDb");
 

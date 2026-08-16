@@ -72,7 +72,8 @@ public sealed class WatchAlertService(
     TimeProvider clock,
     WatchAlertSettings settings,
     ILineRecipientResolver recipientResolver,
-    IAiRouterClient? ai = null)
+    IAiRouterClient? ai = null,
+    IHeatAdvisoryProvider? heatAdvisory = null)
 {
     public async Task<WatchAlertOutcome> EvaluateAsync(Guid householdId, CancellationToken ct = default)
     {
@@ -88,8 +89,11 @@ public sealed class WatchAlertService(
 
             var (today, recent) = await LoadActivityAsync(householdId, ct);
             var nowLocal = HouseholdTime.LocalTime(clock.GetUtcNow());
-            var leftOn = await new RiskAssessmentService(db, clock).LoadLeftOnAsync(householdId, ct);
-            var risk = RiskAssessmentService.Evaluate(today, recent, nowLocal, leftOn);
+            var risks = new RiskAssessmentService(db, clock, heatAdvisory);
+            var leftOn = await risks.LoadLeftOnAsync(householdId, ct);
+            var cooling = await risks.LoadCoolingAsync(householdId, ct);
+            var heat = await risks.GetHeatAsync(ct);
+            var risk = RiskAssessmentService.Evaluate(today, recent, nowLocal, leftOn, null, heat, cooling);
 
             if (risk.Level < settings.Threshold)
             {

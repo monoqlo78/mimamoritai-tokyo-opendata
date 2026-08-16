@@ -73,6 +73,7 @@ public static class DeviceSafetyPolicy
     {
         DeviceType.Light or DeviceType.Fan or DeviceType.DemoDevice => SafetyClass.Safe,
         DeviceType.Plug
+            or DeviceType.AirConditioner
             or DeviceType.Heater
             or DeviceType.Kettle
             or DeviceType.Microwave

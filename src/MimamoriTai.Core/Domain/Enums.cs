@@ -19,7 +19,12 @@ public enum DeviceType
     Kettle = 7,
     Microwave = 8,
     CookingDevice = 9,
-    DemoDevice = 10
+    DemoDevice = 10,
+    /// <summary>
+    /// Cooling appliance. Broken out from <see cref="Plug"/> because the heatstroke rule
+    /// has to know which socket is the one that is supposed to be running on a hot day.
+    /// </summary>
+    AirConditioner = 11
 }
 
 /// <summary>
