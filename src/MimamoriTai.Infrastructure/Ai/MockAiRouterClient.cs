@@ -122,6 +122,11 @@ public sealed class MockAiRouterClient : IAiRouterClient
             return "living-heater";
         }
 
+        if (ContainsAny(message, "エアコン", "冷房", "クーラー", "aircon"))
+        {
+            return "living-ac";
+        }
+
         if (ContainsAny(message, "寝室", "ベッドルーム", "bedroom"))
         {
             return "bedroom-light";

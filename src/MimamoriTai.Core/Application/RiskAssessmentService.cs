@@ -29,7 +29,8 @@ public sealed record FlatPowerDevice(string Name, TimeSpan Flat, int ThresholdHo
 /// room is being cooled, which is the same distinction the dashboard shows as 待機中.
 /// </para>
 /// </summary>
-public sealed record CoolingDevice(string Name, bool IsOn, double? Watts)
+public sealed record CoolingDevice(
+    string Name, bool IsOn, double? Watts, string Alias = "", string SafetyClass = "")
 {
     /// <summary>
     /// Below this the appliance is standing by, not cooling. Set just above zero rather
@@ -49,9 +50,118 @@ public sealed record CoolingDevice(string Name, bool IsOn, double? Watts)
 /// A heating appliance and whether it is actually warming the room right now. The same
 /// standby distinction as <see cref="CoolingDevice"/>, for the other half of the year.
 /// </summary>
-public sealed record HeatingDevice(string Name, bool IsOn, double? Watts)
+public sealed record HeatingDevice(
+    string Name, bool IsOn, double? Watts, string Alias = "", string SafetyClass = "")
 {
     public bool IsHeating => IsOn && (Watts is null || Watts.Value > CoolingDevice.ActiveWatts);
+}
+
+/// <summary>
+/// A room that could be made comfortable right now, and the one appliance that would do
+/// it.
+///
+/// <para>
+/// The heat and cold rules already work out that it is hot outside and nothing indoors
+/// is cooling. Until now that only ever became a warning -- accurate, and useless to a
+/// daughter at work who can see the problem and has to ring her mother to fix it. This
+/// turns the same finding into the action it implies, so noticing and acting are one
+/// tap rather than a phone call.
+/// </para>
+///
+/// <para>
+/// Deliberately not a piece of advice from the model: it is produced by the same
+/// deterministic rule that produced the warning, and it never acts on its own. Somebody
+/// has to press it, which is what keeps a machine from deciding to switch on an
+/// appliance in a house it cannot see.
+/// </para>
+/// </summary>
+/// <param name="CanTurnOnRemotely">
+/// False for appliances the household marked as never-remotely-on. Those still get the
+/// prompt, because knowing to ring and ask is worth something, but not the button.
+/// </param>
+public sealed record ComfortSuggestion(
+    string Title,
+    string Reason,
+    string ActionLabel,
+    string DeviceName,
+    string Alias,
+    bool CanTurnOnRemotely,
+    bool NeedsHazardCheck)
+{
+    /// <summary>
+    /// The suggestion the current conditions imply, or null when there is nothing to
+    /// suggest -- which is the normal case, and stays silent rather than filling the
+    /// screen with advice nobody asked for.
+    /// </summary>
+    public static ComfortSuggestion? For(
+        HeatAdvisory? heat,
+        IReadOnlyList<CoolingDevice>? cooling,
+        ColdAdvisory? cold,
+        IReadOnlyList<HeatingDevice>? heating)
+    {
+        // Heat first: it is the sharper of the two. Heatstroke indoors takes hours, not
+        // days, and more than half of Tokyo's cases happen at home.
+        if (heat is not null
+            && heat.Level >= RiskAssessmentService.CoolingExpectedFrom
+            && cooling is { Count: > 0 }
+            && !cooling.Any(d => d.IsCooling)
+            && Pick(cooling.Select(d => (d.Name, d.Alias, d.SafetyClass, d.IsOn))) is { } ac)
+        {
+            return new ComfortSuggestion(
+                "冷房をつけますか？",
+                $"暑さ指数{heat.Wbgt:0.#}（{heat.LevelText}）です。"
+                    + (ac.IsOn
+                        ? $"{ac.Name}のスイッチは入っていますが、電気が使われていません"
+                        : $"{ac.Name}が動いていません"),
+                "冷房をつける",
+                ac.Name,
+                ac.Alias,
+                ac.SafetyClass != "Restricted",
+                ac.SafetyClass == "Guarded");
+        }
+
+        if (cold is not null
+            && cold.Level >= RiskAssessmentService.HeatingExpectedFrom
+            && heating is { Count: > 0 }
+            && !heating.Any(d => d.IsHeating)
+            && Pick(heating.Select(d => (d.Name, d.Alias, d.SafetyClass, d.IsOn))) is { } warmer)
+        {
+            return new ComfortSuggestion(
+                "暖房をつけますか？",
+                $"気温{cold.TemperatureC:0.#}℃（{cold.LevelText}）です。"
+                    + (warmer.IsOn
+                        ? $"{warmer.Name}のスイッチは入っていますが、電気が使われていません"
+                        : $"{warmer.Name}が動いていません"),
+                "暖房をつける",
+                warmer.Name,
+                warmer.Alias,
+                warmer.SafetyClass != "Restricted",
+                warmer.SafetyClass == "Guarded");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// One appliance out of however many are registered. Anything the family barred from
+    /// remote switching comes last, so a household with both an air conditioner and a
+    /// restricted fan is offered the one that can actually be turned on.
+    /// </summary>
+    private static (string Name, string Alias, string SafetyClass, bool IsOn)? Pick(
+        IEnumerable<(string Name, string Alias, string SafetyClass, bool IsOn)> devices)
+    {
+        var usable = devices.Where(d => !string.IsNullOrEmpty(d.Alias)).ToList();
+
+        if (usable.Count == 0)
+        {
+            return null;
+        }
+
+        return usable
+            .OrderBy(d => d.SafetyClass == "Restricted" ? 1 : 0)
+            .ThenByDescending(d => d.IsOn)
+            .First();
+    }
 }
 
 /// <summary>
@@ -666,7 +776,8 @@ public sealed class RiskAssessmentService(
                 .Select(r => r.ApproxWatts)
                 .FirstOrDefaultAsync(ct);
 
-            cooling.Add(new CoolingDevice(device.DisplayName, isOn, watts));
+            cooling.Add(new CoolingDevice(
+                device.DisplayName, isOn, watts, device.Alias, device.SafetyClass.ToString()));
         }
 
         return cooling;
@@ -702,7 +813,8 @@ public sealed class RiskAssessmentService(
                 .Select(r => r.ApproxWatts)
                 .FirstOrDefaultAsync(ct);
 
-            heating.Add(new HeatingDevice(device.DisplayName, isOn, watts));
+            heating.Add(new HeatingDevice(
+                device.DisplayName, isOn, watts, device.Alias, device.SafetyClass.ToString()));
         }
 
         return heating;

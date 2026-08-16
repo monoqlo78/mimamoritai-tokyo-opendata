@@ -65,7 +65,8 @@ public sealed record DashboardModel(
     ColdAdvisory? Cold = null,
     ColdForecast? TomorrowCold = null,
     IReadOnlyList<DailyOutdoorTemperature>? OutdoorTemperatures = null,
-    string? WeatherStationName = null)
+    string? WeatherStationName = null,
+    ComfortSuggestion? Comfort = null)
 {
     /// <summary>
     /// The public feeds this dashboard is standing on, with whatever each one is
@@ -273,6 +274,7 @@ public sealed class DashboardService(
             cold,
             tomorrowCold,
             outdoor,
-            household.AmedasStationName);
+            household.AmedasStationName,
+            ComfortSuggestion.For(heat, cooling, cold, heating));
     }
 }

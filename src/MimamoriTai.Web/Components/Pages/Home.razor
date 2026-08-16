@@ -181,6 +181,30 @@ else
                     <span class="heat-source">@_model.TomorrowCold.Attribution</span>
                 </p>
             }
+            @if (_model.Comfort is { } comfort)
+            {
+                @* The warning above says the room is too hot and nothing is cooling it.
+                   Left there it is a problem a family member reads at work and can only
+                   solve with a phone call, so the same finding is offered here as the
+                   one action it implies. Nothing happens without a press. *@
+                <div class="comfort-suggest">
+                    <div class="comfort-copy">
+                        <strong>@comfort.Title</strong>
+                        <span>@comfort.Reason</span>
+                    </div>
+                    @if (comfort.CanTurnOnRemotely)
+                    {
+                        <button class="primary-button comfort-action"
+                                title="@comfort.DeviceName をONにします"
+                                @onclick="@(() => ControlAsync(comfort.Alias, DeviceAction.TurnOn))"
+                                disabled="@_busy">@comfort.ActionLabel</button>
+                    }
+                    else
+                    {
+                        <span class="comfort-blocked">この機器は遠隔でONにしない設定です</span>
+                    }
+                </div>
+            }
         </div>
         <button class="secondary-button" title="現在の状態を再評価し、必要であればLINEに通知します"
                 @onclick="EvaluateAlertAsync" disabled="@_busy">
@@ -1006,8 +1030,17 @@ else
     {
         var type = Enum.TryParse<DeviceType>(card.DeviceType, out var parsed) ? parsed : DeviceType.Plug;
         var checks = string.Join("\n", DeviceSafetyPolicy.HazardChecks(type).Select(c => $"・{c}"));
+
+        // An air conditioner is on the guarded list because it draws heavily and can be
+        // set the wrong way round, not because it burns anything. Telling someone their
+        // air conditioner "handles fire and heat" would make the whole warning look like
+        // boilerplate, and the next real one would be skipped.
+        var lead = type == DeviceType.AirConditioner
+            ? $"{card.Name} をONにします。次の点をご確認ください。"
+            : $"{card.Name} は火や熱をあつかう機器です。周囲の安全を確認してからONにします。";
+
         var message =
-            $"{card.Name} は火や熱をあつかう機器です。周囲の安全を確認してからONにします。\n\n"
+            $"{lead}\n\n"
             + $"{checks}\n\n"
             + "実行するとご家族全員にお知らせが届きます。よろしいですか？";
 

@@ -562,6 +562,16 @@ a.ghost.small { min-height: 32px; padding: 4px 10px; font-size: 12px; }
 .heat-note.cold-cold .heat-pill { background: rgba(37, 99, 235, 0.16); color: #1d4ed8; }
 .heat-note.cold-severecold .heat-pill { background: rgba(30, 64, 175, 0.20); color: #1e3a8a; }
 .heat-note.cold-forecast .heat-pill { background: rgba(99, 102, 241, 0.16); color: #4338ca; }
+
+/* The one-tap suggestion under the warning. Given a card of its own rather than another
+   line of advice text, because it is the only thing on this panel that changes something
+   in the house and it should not be possible to press it by accident while reading. */
+.comfort-suggest { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 12px 0 0; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(234, 88, 12, 0.28); background: rgba(255, 237, 213, 0.55); }
+.comfort-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.comfort-copy strong { font-size: 13px; color: #9a3412; }
+.comfort-copy span { font-size: 12px; color: var(--cp-text-muted); }
+.comfort-action { flex: 0 0 auto; padding: 8px 16px; font-size: 13px; }
+.comfort-blocked { font-size: 11px; color: var(--cp-text-muted); }
 /* The one line that tells the resident what to actually do. Kept a step larger and
    darker than the figures beside it: the number is context, this is the message. */
 .heat-advice { flex: 1 0 100%; color: var(--cp-text); font-size: 13px; line-height: 1.5; }

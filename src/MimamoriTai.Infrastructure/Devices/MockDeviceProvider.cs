@@ -16,11 +16,15 @@ public sealed class MockDeviceProvider : IDeviceProvider
     /// <remarks>
     /// The heater is intentionally included: it classifies as <see cref="DeviceSafetyClass.Restricted"/>,
     /// which lets the safety guard-rail (refuse ON, allow OFF) be demonstrated end to end.
+    /// The air conditioner is here for the other half of that story: on a hot day it is
+    /// the appliance the heat rule expects to see running, so a demo without one can only
+    /// ever show the warning, never the suggestion that answers it.
     /// </remarks>
     public static readonly IReadOnlyList<ProviderDevice> SeedDevices =
     [
         new($"{DemoPrefix}living-light", "リビング照明", DeviceType.Light, "リビング"),
         new($"{DemoPrefix}bedroom-light", "寝室照明", DeviceType.Light, "寝室"),
+        new($"{DemoPrefix}living-ac", "エアコン", DeviceType.AirConditioner, "リビング"),
         new($"{DemoPrefix}living-fan", "扇風機", DeviceType.Fan, "リビング"),
         new($"{DemoPrefix}living-heater", "電気ストーブ", DeviceType.Heater, "リビング")
     ];
@@ -29,6 +33,7 @@ public sealed class MockDeviceProvider : IDeviceProvider
     {
         [$"{DemoPrefix}living-light"] = "living-light",
         [$"{DemoPrefix}bedroom-light"] = "bedroom-light",
+        [$"{DemoPrefix}living-ac"] = "living-ac",
         [$"{DemoPrefix}living-fan"] = "living-fan",
         [$"{DemoPrefix}living-heater"] = "living-heater"
     };
