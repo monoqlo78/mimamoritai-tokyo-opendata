@@ -123,4 +123,4 @@ SwitchBot <- 200 POST /v1.1/devices/01-202410-12345678/commands (48 bytes)
 
 ## 7. デモ環境での代替
 
-実機が無い間は `MockDeviceProvider`（`src/MimamoriTai.Infrastructure/Devices/MockDeviceProvider.cs`）がインメモリで4台の擬似デバイス（リビング照明・寝室照明・扇風機・電気ストーブ）を提供し、認証情報を一切必要としません。電気ストーブは `SafetyClass.Guarded` に分類される機器で、AIからのON操作に周囲の安全確認がはさまることを実演するために含まれています。ダッシュボードの表示・自然言語操作・安全ガードレールのデモはすべてこのモックで完結します。
+実機が無い間は `MockDeviceProvider`（`src/MimamoriTai.Infrastructure/Devices/MockDeviceProvider.cs`）がインメモリで5台の擬似デバイス（リビング照明・寝室照明・扇風機・電気ストーブ・エアコン）を提供し、認証情報を一切必要としません。電気ストーブとエアコンは `SafetyClass.Guarded` に分類される機器で、AIからのON操作に周囲の安全確認がはさまることを実演するために含まれています。ダッシュボードの表示・自然言語操作・安全ガードレールのデモはすべてこのモックで完結します。

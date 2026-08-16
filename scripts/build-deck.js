@@ -228,8 +228,8 @@ function title(slide, text, sub) {
   });
 
   const pts = [
-    ['1', '機器を安全クラスで分ける', '照明・扇風機は Safe、ヒーター類は Restricted'],
-    ['2', 'ON と OFF を非対称にする', '危険機器の ON は拒否、OFF は許可'],
+    ['1', '機器を安全クラスで分ける', '照明・扇風機は Safe、暖房・調理器具は Guarded'],
+    ['2', 'ON と OFF を非対称にする', 'ON は安全確認のあと、OFF はそのまま許可'],
     ['3', '拒否も含めて全部記録する', '成功・失敗・拒否をすべて監査ログへ'],
   ];
   pts.forEach((p, i) => {
@@ -243,7 +243,7 @@ function title(slide, text, sub) {
   if (fs.existsSync(IMG('02-guardrail.png'))) {
     s.addShape(pptx.ShapeType.rect, { x: 6.22, y: 1.7, w: 3.31, h: 2.26, fill: { color: C.cream } });
     s.addImage({ path: IMG('02-guardrail.png'), x: 6.3, y: 1.78, w: 3.15, h: 2.1 });
-    s.addText('「ストーブつけて」→ 拒否。機器は停止中のまま', {
+    s.addText('「ストーブつけて」→ まず安全確認。機器は停止中のまま', {
       x: 6.22, y: 4.0, w: 3.31, h: 0.32, fontSize: 10, color: C.cream, fontFace: BODY, align: 'center',
     });
   }
@@ -282,8 +282,8 @@ function title(slide, text, sub) {
     return cx + steps[idx].w / 2;
   };
   const branches = [
-    { cx: centerOf(2), w: 1.5, label: '確認を返す', fill: C.cream, fg: C.ink, bold: false },
-    { cx: centerOf(3), w: 1.5, label: '拒否', fill: C.alert, fg: C.white, bold: true },
+    { cx: centerOf(2), w: 1.5, label: '聞き返す', fill: C.cream, fg: C.ink, bold: false },
+    { cx: centerOf(3), w: 1.5, label: '確認 / 拒否', fill: C.alert, fg: C.white, bold: true },
   ];
   branches.forEach((br) => {
     s.addShape(pptx.ShapeType.rect, { x: br.cx - 0.015, y: 2.85, w: 0.03, h: 0.3, fill: { color: C.mute } });
@@ -307,8 +307,8 @@ function title(slide, text, sub) {
   title(s, '「消す」は通す', '安全性を高める方向の操作まで止めると、使い物にならない');
 
   const cols = [
-    { head: 'ストーブ つけて', res: '拒否', color: C.alert, note: '安全のため音声・チャットからの\n操作を禁止しています。' },
-    { head: 'ストーブ 消して', res: '受理（確認あり）', color: C.ok, note: '消します。よろしいですか？\n→「はい」で実行' },
+    { head: 'ストーブ つけて', res: '確認が先', color: C.alert, note: '火や熱をあつかう機器です。\n周囲の安全を確認してから操作します。' },
+    { head: 'ストーブ 消して', res: 'そのまま受理', color: C.ok, note: '確認をはさまずに実行します。' },
   ];
   cols.forEach((cd, i) => {
     const x = 0.62 + i * 4.6;
@@ -319,7 +319,7 @@ function title(slide, text, sub) {
     s.addText(cd.note, { x: x + 0.22, y: 2.88, w: 3.85, h: 0.62, fontSize: 11.5, color: C.ink, fontFace: BODY, lineSpacing: 16 });
   });
 
-  s.addText('拒否の理由が使う人に見えないと、ただの故障に見える。\nそのため機器カードにも「安全のため、遠隔では消す操作だけできます」と表示している。', {
+  s.addText('なぜ今すぐ動かないのかが使う人に見えないと、ただの故障に見える。\nそのため機器カードにも「周囲の安全を確認したうえでONにします」と表示している。', {
     x: 0.62, y: 3.85, w: 8.83, h: 0.75, fontSize: 12.5, color: C.ink, fontFace: BODY, lineSpacing: 20,
   });
   footer(s);
@@ -523,7 +523,7 @@ function title(slide, text, sub) {
   });
 
   const stats = [
-    ['959', 'テスト（失敗ゼロ）'],
+    ['977', 'テスト（失敗ゼロ）'],
     ['0', '必要なAPIキー（デモ実行時）'],
     ['3', '記録した「沈黙した障害」'],
   ];
