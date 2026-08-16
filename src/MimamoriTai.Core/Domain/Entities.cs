@@ -381,6 +381,48 @@ public class PlugMiniReading
 }
 
 /// <summary>
+/// One observation of the outdoor heat index for the watched area, captured from
+/// public open data (環境省 WBGT + 気象庁 AMeDAS). Stored per observation time rather
+/// than per household because the figure is city-wide: every household watching the
+/// same area shares the same row.
+///
+/// Persisting it at all is deliberate. The provider only ever knows "now", but the
+/// question a family actually asks is "was it this hot yesterday too, and was the
+/// air conditioner running then?" -- which needs history sitting next to the plug
+/// readings, in the app database and in the Fabric Eventhouse.
+/// </summary>
+public class HeatReading
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>Observation point, e.g. 44132 (東京).</summary>
+    public string PointCode { get; set; } = string.Empty;
+
+    public string AreaName { get; set; } = string.Empty;
+
+    /// <summary>暑さ指数 (WBGT) in degrees Celsius.</summary>
+    public double Wbgt { get; set; }
+
+    /// <summary>The 環境省 five-band classification of <see cref="Wbgt"/>, stored as its int value.</summary>
+    public int Level { get; set; }
+
+    public double? TemperatureC { get; set; }
+    public double? HumidityPercent { get; set; }
+
+    /// <summary>When the source data says the observation applies to, not when we fetched it.</summary>
+    public DateTimeOffset ObservedAtUtc { get; set; }
+
+    public DateTimeOffset ReceivedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Stamped only on a successful Fabric Eventhouse publish, mirroring
+    /// <see cref="PlugMiniReading.PublishedToStreamAtUtc"/>: null rows are retried,
+    /// never silently dropped.
+    /// </summary>
+    public DateTimeOffset? PublishedToStreamAtUtc { get; set; }
+}
+
+/// <summary>
 /// A short-lived, single-use pairing code that lets a signed-in household owner link
 /// a LINE Messaging API source (userId/groupId) to their household by sending
 /// "連携 123456" to the bot, without ever displaying or storing the LINE userId in

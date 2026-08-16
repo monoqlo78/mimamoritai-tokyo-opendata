@@ -30,6 +30,7 @@ builder.Services.AddHostedService<DemoDataTopUpBackgroundService>();
 builder.Services.AddHostedService<EventStreamPublishBackgroundService>();
 builder.Services.AddHostedService<PlugMiniReadingPublishBackgroundService>();
 builder.Services.AddHostedService<FabricConsoleSyncBackgroundService>();
+builder.Services.AddHostedService<HeatReadingCaptureBackgroundService>();
 
 var app = builder.Build();
 

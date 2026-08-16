@@ -275,6 +275,24 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IPlugMiniReadingStreamPublisher, MockPlugMiniReadingStreamPublisher>();
         }
 
+        // Same Eventhouse, separate table and separate client: outdoor open data and
+        // device telemetry arrive on independent cadences and must fail independently.
+        if (eventhouse.IsConfigured)
+        {
+            services.TryAddSingleton<TokenCredential>(new DefaultAzureCredential());
+            services.AddHttpClient<IHeatReadingStreamPublisher, EventhouseHeatReadingStreamPublisher>(client =>
+            {
+                client.BaseAddress = new Uri(eventhouse.ClusterUri.TrimEnd('/') + "/");
+                client.Timeout = TimeSpan.FromSeconds(eventhouse.TimeoutSeconds);
+            });
+        }
+        else
+        {
+            services.AddSingleton<IHeatReadingStreamPublisher, MockHeatReadingStreamPublisher>();
+        }
+
+        services.AddScoped<HeatReadingService>();
+
         // --- Application services --------------------------------------------
 
         // Scoped, unlike the other publishers here, because it reads the app database

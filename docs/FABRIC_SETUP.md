@@ -71,6 +71,62 @@
 
   取り込みロール（`Eventhouse:PlugMiniTableName`/`PlugMiniMappingName` に書き込むプリンシパル）の権限確認は未実施です。取り込みが動いていることは `SwitchBotPlugReadings | summarize count()` で確認できます。
 
+## 0-2. HeatReadings テーブル（オープンデータの暑さ指数）
+
+熱中症ガード（`docs/OPENDATA.md`）が使う**屋外の暑さ指数（WBGT）を時系列で残す**テーブルです。世帯にも機器にも紐づかない都市規模のオープンデータなので、`SwitchBotPlugReadings` の派生ではなく独立したテーブルにしています（分析側は時刻で join します）。実装は `EventhouseHeatReadingStreamPublisher`、Azure SQL側の正データは `HeatReading` エンティティ（`Core/Domain/Entities.cs`）です。
+
+- **テーブル名**: `HeatReadings`（`Eventhouse:HeatTableName`、既定値）
+- **マッピング名**: `HeatReadingsMapping`（`Eventhouse:HeatMappingName`、既定値）
+- **列一覧**（`HeatReadingRecord`、`Core/Abstractions/IHeatReadingStreamPublisher.cs` 参照）:
+
+  | 列名 | 型 | 説明 |
+  |---|---|---|
+  | `readingId` | guid | 一意なレコードID（`HeatReading.Id`） |
+  | `pointCode` | string | 環境省の観測地点番号（東京は `44132`。`OpenData:PointCode`） |
+  | `areaName` | string | 地点名（例: 東京） |
+  | `wbgt` | real | 暑さ指数（WBGT、℃） |
+  | `level` | int | `HeatAlertLevel`（1=ほぼ安全 … 5=危険）の数値 |
+  | `levelText` | string | 同じ区分の日本語ラベル。KQL や Data Agent が環境省の閾値を持たずに「厳重警戒」で集計できるよう非正規化しています |
+  | `temperatureC` | real (nullable) | 気象庁AMeDASの気温（℃）。品質フラグが0以外のときは null |
+  | `humidityPercent` | real (nullable) | 同・相対湿度（%） |
+  | `observedAtUtc` | datetime | 観測・予測時刻（UTC） |
+
+- **重複排除キー**: Azure SQL側は `(PointCode, ObservedAtUtc)` に一意インデックスを張っています。プロバイダは `OpenData:CacheMinutes` の間ずっと同じ予測列を返すため、これがないと同じ観測が何度も積み上がります。
+- **公開タイミング**: `PlugMiniReading` と同じく `PublishedToStreamAtUtc` が null の行だけを `HeatReadingService.PublishUnpublishedBatchAsync` がバッチ送信し、**成功した行にだけ**タイムスタンプを刻みます。取得と送信は `HeatReadingCaptureBackgroundService` が同じ周期で回しますが呼び出しは別々なので、Fabric が落ちていてもDBへの記録は残ります。
+- **Eventhouse側の作成**:
+
+  ```kusto
+  .create-merge table HeatReadings (
+      ReadingId: guid, PointCode: string, AreaName: string,
+      Wbgt: real, Level: int, LevelText: string,
+      TemperatureC: real, HumidityPercent: real, ObservedAtUtc: datetime)
+
+  // path は publisher が送るJSONに合わせて camelCase。
+  .create-or-alter table HeatReadings ingestion json mapping "HeatReadingsMapping"
+  '[{"column":"ReadingId","path":"$.readingId"},{"column":"PointCode","path":"$.pointCode"},'
+  '{"column":"AreaName","path":"$.areaName"},{"column":"Wbgt","path":"$.wbgt"},'
+  '{"column":"Level","path":"$.level"},{"column":"LevelText","path":"$.levelText"},'
+  '{"column":"TemperatureC","path":"$.temperatureC"},{"column":"HumidityPercent","path":"$.humidityPercent"},'
+  '{"column":"ObservedAtUtc","path":"$.observedAtUtc"}]'
+
+  .alter table HeatReadings policy streamingingestion enable
+  ```
+
+- **分析例**（暑さ指数が高い時間帯に冷房が使われていたか）:
+
+  ```kql
+  let heat = HeatReadings
+  | where ObservedAtUtc > ago(7d)
+  | summarize Wbgt = max(Wbgt), LevelText = take_any(LevelText) by Hour = bin(ObservedAtUtc, 1h);
+  SwitchBotPlugReadings
+  | where OccurredAtUtc > ago(7d)
+  | summarize Watts = avg(DailyEnergyWh) by DeviceName, Hour = bin(OccurredAtUtc, 1h)
+  | join kind=inner heat on Hour
+  | where Wbgt >= 28
+  | project Hour, DeviceName, Watts, Wbgt, LevelText
+  | order by Hour desc
+  ```
+
 ### 使用電力量を KQL で見る
 
 **`DailyEnergyWh` は「その日の積算電力量」ではありません。** 列名に反して、SwitchBot が返す `weight` は**その瞬間の実電力（W）**です（実機での検証結果は後述）。したがって使用電力量（Wh）を出すには、**サンプルの値をそのサンプルが代表する時間で積分**します。アプリの `PowerUsageService` とまったく同じ考え方です。

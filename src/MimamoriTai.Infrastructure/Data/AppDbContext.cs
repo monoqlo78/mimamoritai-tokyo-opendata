@@ -28,6 +28,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<LineRecipient> LineRecipients => Set<LineRecipient>();
     public DbSet<SwitchBotConnection> SwitchBotConnections => Set<SwitchBotConnection>();
     public DbSet<PlugMiniReading> PlugMiniReadings => Set<PlugMiniReading>();
+    public DbSet<HeatReading> HeatReadings => Set<HeatReading>();
     public DbSet<LineLinkCode> LineLinkCodes => Set<LineLinkCode>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -200,6 +201,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // publish path runs every cycle, mirroring DeviceEvent.
             e.HasIndex(x => x.PublishedToStreamAtUtc);
             e.HasOne(x => x.Device).WithMany().HasForeignKey(x => x.DeviceId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<HeatReading>(e =>
+        {
+            e.Property(x => x.PointCode).HasMaxLength(16).IsRequired();
+            e.Property(x => x.AreaName).HasMaxLength(64).IsRequired();
+            // One row per point per observation time: the provider re-reads the same
+            // forecast column for up to CacheMinutes, and re-fetching must not create
+            // a duplicate observation.
+            e.HasIndex(x => new { x.PointCode, x.ObservedAtUtc }).IsUnique();
+            e.HasIndex(x => x.PublishedToStreamAtUtc);
         });
 
         b.Entity<LineLinkCode>(e =>

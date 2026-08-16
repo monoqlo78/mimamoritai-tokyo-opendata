@@ -21,6 +21,7 @@ public interface IAppDbContext
     DbSet<LineRecipient> LineRecipients { get; }
     DbSet<SwitchBotConnection> SwitchBotConnections { get; }
     DbSet<PlugMiniReading> PlugMiniReadings { get; }
+    DbSet<HeatReading> HeatReadings { get; }
     DbSet<LineLinkCode> LineLinkCodes { get; }
 
     Task<int> SaveChangesAsync(CancellationToken ct = default);

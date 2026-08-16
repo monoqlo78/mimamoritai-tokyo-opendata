@@ -26,6 +26,11 @@ public sealed class EventhouseOptions
 
     public string PlugMiniMappingName { get; set; } = "SwitchBotPlugReadingsMapping";
 
+    /// <summary>Table for the outdoor heat index captured from open data (see docs/FABRIC_SETUP.md).</summary>
+    public string HeatTableName { get; set; } = "HeatReadings";
+
+    public string HeatMappingName { get; set; } = "HeatReadingsMapping";
+
     public int TimeoutSeconds { get; set; } = 30;
 
     public bool IsConfigured =>
