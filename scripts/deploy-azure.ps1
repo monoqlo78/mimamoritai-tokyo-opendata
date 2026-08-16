@@ -11,15 +11,28 @@
 
 .EXAMPLE
     pwsh ./scripts/deploy-azure.ps1
+
+.NOTES
+    デプロイ先の名前はリポジトリに置きません（このリポジトリは公開しているため）。
+    環境変数 MIMAMORI_RG / MIMAMORI_WEBAPP に入れておくか、引数で渡してください。
+
+        $env:MIMAMORI_RG     = '<resource-group>'
+        $env:MIMAMORI_WEBAPP = '<app-service-name>'
 #>
 [CmdletBinding()]
 param(
-    [string]$ResourceGroup = 'rg-mimamoritai-hackathon',
-    [string]$WebAppName    = 'app-mimamoritai-hack',
+    [string]$ResourceGroup = $env:MIMAMORI_RG,
+    [string]$WebAppName    = $env:MIMAMORI_WEBAPP,
     [string]$Project       = 'src/MimamoriTai.Web'
 )
 
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($ResourceGroup)) {
+    throw "リソースグループが指定されていません。-ResourceGroup を渡すか、環境変数 MIMAMORI_RG を設定してください。"
+}
+if ([string]::IsNullOrWhiteSpace($WebAppName)) {
+    throw "App Service 名が指定されていません。-WebAppName を渡すか、環境変数 MIMAMORI_WEBAPP を設定してください。"
+}
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
 

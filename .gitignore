@@ -79,3 +79,6 @@ assets/validate_log.txt
 .DS_Store
 Thumbs.db
 desktop.ini
+
+## Local deployment target names (public repo: real names must not be committed)
+scripts/local-env.ps1

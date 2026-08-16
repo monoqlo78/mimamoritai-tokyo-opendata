@@ -65,12 +65,12 @@ public class FabricConsoleSyncCredentialTests
         // "Login failed for user '<token-identified principal>'" is the whole message Fabric
         // gives back, which is useless for deciding who to grant access to. The claims below
         // are identifiers rather than credentials, so they can safely reach a log.
-        var payload = """{"oid":"54af8a95-f1bd-4a59-96b2-e51ab7506c5e","appid":"6385e9c6","app_displayname":"app-mimamoritai-hack"}""";
+        var payload = """{"oid":"54af8a95-f1bd-4a59-96b2-e51ab7506c5e","appid":"6385e9c6","app_displayname":"contoso-web"}""";
         var jwt = $"header.{Base64Url(payload)}.signature";
 
         var described = FabricSqlConsoleSync.DescribeToken(jwt);
 
-        Assert.Contains("app-mimamoritai-hack", described);
+        Assert.Contains("contoso-web", described);
         Assert.Contains("54af8a95-f1bd-4a59-96b2-e51ab7506c5e", described);
         Assert.DoesNotContain("signature", described);
     }

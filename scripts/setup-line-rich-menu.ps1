@@ -84,11 +84,21 @@ param(
 
     [string]$ApiDataBaseUrl = 'https://api-data.line.me',
 
-    [ValidatePattern('^https://')]
-    [string]$WebAppUrl = 'https://app-mimamoritai-hack.azurewebsites.net/one-touch'
+    # 公開リポジトリなので本番URLは埋め込まない。
+    # 環境変数 MIMAMORI_WEBAPP（App Service 名）か MIMAMORI_WEBAPP_URL（完全なURL）で渡す。
+    [string]$WebAppUrl = $(
+        if ($env:MIMAMORI_WEBAPP_URL) { "$($env:MIMAMORI_WEBAPP_URL.TrimEnd('/'))/one-touch" }
+        elseif ($env:MIMAMORI_WEBAPP) { "https://$($env:MIMAMORI_WEBAPP).azurewebsites.net/one-touch" }
+        else { '' }
+    )
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($WebAppUrl -notlike 'https://*') {
+    Write-Host "ERROR: -WebAppUrl が https:// で始まっていません。環境変数 MIMAMORI_WEBAPP か MIMAMORI_WEBAPP_URL を設定するか、-WebAppUrl を渡してください。" -ForegroundColor Red
+    exit 1
+}
 
 if ([string]::IsNullOrWhiteSpace($ChannelAccessToken)) {
     Write-Host "ERROR: -ChannelAccessToken must not be empty." -ForegroundColor Red

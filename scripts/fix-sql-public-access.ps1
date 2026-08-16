@@ -36,8 +36,8 @@
 param(
     [string]$ResourceGroup = 'sql-group',
     [string]$ServerName = 'sqldb-mngenv',
-    [string]$WebAppResourceGroup = 'rg-mimamoritai-hackathon',
-    [string]$WebAppName = 'app-mimamoritai-hack',
+    [string]$WebAppResourceGroup = $env:MIMAMORI_RG,
+    [string]$WebAppName = $env:MIMAMORI_WEBAPP,
 
     # 状態を見るだけで、書き込みは一切しない。
     [switch]$CheckOnly,

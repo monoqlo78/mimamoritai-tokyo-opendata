@@ -2,7 +2,7 @@
 
 提出物が「動いている」ことを、開発機以外から確認した記録です。
 
-- 本番URL: <https://app-mimamoritai-hack.azurewebsites.net/>
+- 本番URL: <https://<your-app>.azurewebsites.net/>
 - 取得日時: 2026-08-12 19:02 UTC（2026-08-13 04:02 JST）
 
 > **この環境は審査後に停止します。** ハッカソン用に立てた Azure リソースなので、審査期間を過ぎるとこの URL は応答しなくなります。そのため本書では、URL を案内するのではなく**その時点で動いていた記録**（応答ヘッダ・TLS・画面キャプチャ）を残すことを目的にしています。上の日時の時点では稼働していました。
@@ -18,7 +18,7 @@
 | --- | --- |
 | 検証元ホスト | `blendercodex`（Azure VM / Windows 11 Pro） |
 | 検証元の外向きIP | `20.78.x.x`（開発PCとは別ネットワーク） |
-| 名前解決 | `app-mimamoritai-hack.azurewebsites.net` → `20.189.196.1` |
+| 名前解決 | 公開URLが Azure App Service の共有フロントエンドIPへ解決されることを確認 |
 
 ### HTTP応答
 

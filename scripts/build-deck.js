@@ -523,7 +523,7 @@ function title(slide, text, sub) {
   });
 
   const stats = [
-    ['681', 'テスト（全合格）'],
+    ['959', 'テスト（失敗ゼロ）'],
     ['0', '必要なAPIキー（デモ実行時）'],
     ['3', '記録した「沈黙した障害」'],
   ];
@@ -535,11 +535,13 @@ function title(slide, text, sub) {
 
   s.addShape(pptx.ShapeType.rect, { x: 0.62, y: 3.4, w: 8.83, h: 1.35, fill: { color: C.ink } });
   s.addText([
-    { text: 'デモ  ', options: { fontSize: 12, color: C.rose, fontFace: BODY, bold: true } },
-    { text: 'https://app-mimamoritai-hack.azurewebsites.net/\n', options: { fontSize: 12.5, color: C.white, fontFace: BODY } },
-    { text: 'コード  ', options: { fontSize: 12, color: C.rose, fontFace: BODY, bold: true } },
-    { text: 'https://github.com/monoqlo78/mimamoritai-careroute-ai', options: { fontSize: 12.5, color: C.white, fontFace: BODY } },
-  ], { x: 0.95, y: 3.6, w: 8.2, h: 0.75, lineSpacing: 22 });
+    { text: 'コード  ', options: { fontSize: 11, color: C.rose, fontFace: BODY, bold: true } },
+    { text: 'https://github.com/monoqlo78/mimamoritai-careroute-ai\n', options: { fontSize: 11, color: C.white, fontFace: BODY } },
+    { text: 'デモ動画  ', options: { fontSize: 11, color: C.rose, fontFace: BODY, bold: true } },
+    { text: 'https://youtu.be/TnM-RHFZ_Lc （字幕・ナレーション入り / 3分11秒）\n', options: { fontSize: 11, color: C.white, fontFace: BODY } },
+    { text: '解説記事  ', options: { fontSize: 11, color: C.rose, fontFace: BODY, bold: true } },
+    { text: 'https://qiita.com/monoqlo78/items/27ea5bfa760bd8e3c3b7', options: { fontSize: 11, color: C.white, fontFace: BODY } },
+  ], { x: 0.95, y: 3.52, w: 8.2, h: 0.9, lineSpacing: 17 });
 
   s.addText('安全判定をLLMの外側に置いたか、内側でお願いしたか。そこが一番の分岐点だった。', {
     x: 0.95, y: 4.32, w: 8.2, h: 0.34, fontSize: 11, italic: true, color: C.rose, fontFace: BODY,

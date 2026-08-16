@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using MimamoriTai.Core.Abstractions;
 using MimamoriTai.Core.Domain;
 
@@ -22,7 +22,7 @@ public sealed class WatchAlertSettings
     public TimeSpan Cooldown { get; init; } = TimeSpan.FromHours(6);
 
     /// <summary>
-    /// Absolute https origin of this deployment, e.g. "https://app-mimamoritai-hack.azurewebsites.net".
+    /// Absolute https origin of this deployment, e.g. "https://<your-app>.azurewebsites.net".
     ///
     /// LINE fetches a Flex image from its own servers, so a relative path or a
     /// localhost URL cannot work: without a real public origin the alert is sent as

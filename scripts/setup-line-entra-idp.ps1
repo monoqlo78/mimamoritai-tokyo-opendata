@@ -452,4 +452,6 @@ Write-Host "     https://contsoexternal.ciamlogin.com/$TenantId/federation/oauth
 Write-Host ""
 Write-Host "Use whichever one the Entra portal actually displays for the LINE provider." -ForegroundColor Yellow
 Write-Host ""
-Write-Host "App URL for reference: https://app-mimamoritai-hack.azurewebsites.net" -ForegroundColor Gray
+if ($env:MIMAMORI_WEBAPP) {
+    Write-Host "App URL for reference: https://$($env:MIMAMORI_WEBAPP).azurewebsites.net" -ForegroundColor Gray
+}

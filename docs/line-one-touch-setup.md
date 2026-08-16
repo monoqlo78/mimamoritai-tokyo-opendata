@@ -12,7 +12,7 @@
 - Basic ID: `@755ykcrx`
 - 友だち追加URL: `https://line.me/R/ti/p/@755ykcrx`
 - QRコード: `https://qr-official.line.me/gs/M_755ykcrx_GW.png`
-- 本番Webhook: `https://app-mimamoritai-hack.azurewebsites.net/webhooks/line`
+- 本番Webhook: `https://<your-app>.azurewebsites.net/webhooks/line`
 - LINE Developersプロバイダー: `見守り隊`（ID `2005421841`）
 - Messaging APIチャネルID: `2011034584`
 
@@ -89,7 +89,7 @@ https://<公開ホスト>/webhooks/line
 
 ```json
 "Line": {
-  "PublicBaseUrl": "https://app-mimamoritai-hack.azurewebsites.net",
+  "PublicBaseUrl": "https://<your-app>.azurewebsites.net",
   "SenderName": "ミマモ",
   "SenderIconPath": "/images/mimamo-avatar.png"
 }
@@ -100,14 +100,14 @@ https://<公開ホスト>/webhooks/line
 
 ## 4-3. LINEの中でミマモを動かす（LIFF）
 
-> **状態: LIFFアプリ登録済み。** 2026-08-12 に LINEログインチャネル「見守り隊ログイン」（チャネルID `2011065310`）へ LIFF アプリ **見守り隊 今日の様子** を作成しました。LIFF ID は `2011065310-k0R1hHKz`、LIFF URL は `https://liff.line.me/2011065310-k0R1hHKz` です。サイズ Full / Scope `openid` `profile` / 友だち追加オプション Off。これらは公開識別子のため `appsettings.json` に直接入れてあります（環境変数や user-secrets で上書き可能）。**残作業は本番へのデプロイのみ**で、エンドポイント `https://app-mimamoritai-hack.azurewebsites.net/liff` が公開されれば動作します。
+> **状態: LIFFアプリ登録済み。** 2026-08-12 に LINEログインチャネル「見守り隊ログイン」（チャネルID `2011065310`）へ LIFF アプリ **見守り隊 今日の様子** を作成しました。LIFF ID は `2011065310-k0R1hHKz`、LIFF URL は `https://liff.line.me/2011065310-k0R1hHKz` です。サイズ Full / Scope `openid` `profile` / 友だち追加オプション Off。これらは公開識別子のため `appsettings.json` に直接入れてあります（環境変数や user-secrets で上書き可能）。**残作業は本番へのデプロイのみ**で、エンドポイント `https://<your-app>.azurewebsites.net/liff` が公開されれば動作します。
 
 `/liff` は LINE のトークから開く縦長ページです。Webと同じ three.js ビューアでミマモが動き、「今日の様子」を表示します。**`Line:LiffId` が未設定のあいだはこの機能は表示されません**（URLを直接開いても案内文だけが出ます）。
 
 新しく作り直す場合の手順:
 
 1. [LINE Developers](https://developers.line.biz/console/) で対象チャネルを開き、**LIFF** タブ → **追加** をクリックします。
-2. サイズは **Full**、エンドポイントURLに `https://app-mimamoritai-hack.azurewebsites.net/liff` を入力します。
+2. サイズは **Full**、エンドポイントURLに `https://<your-app>.azurewebsites.net/liff` を入力します。
 3. **Scope** で `profile` と `openid` にチェックを入れます（`openid` がないとIDトークンが発行されず、世帯を特定できません）。
 4. 発行された **LIFF ID**（`1234567890-AbCdEfGh` 形式）と、同じチャネルの **Channel ID**（数字）を設定に入れます。
 

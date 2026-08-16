@@ -8,7 +8,7 @@
 
 | 種別 | 名前 |
 | --- | --- |
-| App Service | `app-mimamoritai-hack` |
+| App Service | `<your-app>` |
 | App Service プラン | `asp-mimamoritai` |
 | Key Vault | `kv-mimamoritai-hack` |
 | 仮想ネットワーク | `vnet-mimamoritai`（`snet-appsvc` / `snet-pe`） |

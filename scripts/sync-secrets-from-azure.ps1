@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Azure App Service (app-mimamoritai-hack) のアプリ設定をローカルの User Secrets へ同期します。
+    Azure App Service のアプリ設定をローカルの User Secrets へ同期します。
 
 .DESCRIPTION
     ローカル開発でも本番と同じ LINE / OrcaRouter / Fabric / Eventhouse の資格情報を使えるようにします。
@@ -9,20 +9,27 @@
     このスクリプトは 見守り隊 のリソースグループのみを参照します。
     他案件 (rg-fraudshield-tokyo-hackathon など) には一切アクセスしません。
 
+    接続先の名前はリポジトリに置きません（このリポジトリは公開しているため）。
+    環境変数 MIMAMORI_SUBSCRIPTION / MIMAMORI_RG / MIMAMORI_WEBAPP を使うか、引数で渡してください。
+
 .EXAMPLE
     pwsh ./scripts/sync-secrets-from-azure.ps1
     pwsh ./scripts/sync-secrets-from-azure.ps1 -WhatIf
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string] $Subscription  = '51420a57-c7be-4920-9e8a-5382f2bad58d',
-    [string] $ResourceGroup = 'rg-mimamoritai-hackathon',
-    [string] $WebAppName    = 'app-mimamoritai-hack',
+    [string] $Subscription  = $env:MIMAMORI_SUBSCRIPTION,
+    [string] $ResourceGroup = $env:MIMAMORI_RG,
+    [string] $WebAppName    = $env:MIMAMORI_WEBAPP,
     # ローカルでは実 DB / 実環境名を使わないため既定で除外する。
     [string[]] $Exclude     = @('ConnectionStrings__AppDb', 'ASPNETCORE_ENVIRONMENT')
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($WebAppName)) {
+    throw "App Service 名が指定されていません。-WebAppName を渡すか、環境変数 MIMAMORI_WEBAPP を設定してください。"
+}
 
 if ($ResourceGroup -notlike '*mimamoritai*') {
     throw "このスクリプトは見守り隊専用です。指定されたリソースグループ '$ResourceGroup' は対象外です。"

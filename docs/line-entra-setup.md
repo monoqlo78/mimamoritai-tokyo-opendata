@@ -32,7 +32,7 @@ Entra External ID (CIAM) 側と LINE Developers 側の **両方** について�
 | ユーザーフロー一覧 | `SAMLTEST` / `SAMLTEST2` / **`MimamoriTai SignUpSignIn`**（id: `d06ea237-ed42-4f1c-8526-9d766b66d8f4`。スクリプト既定値と一致） |
 | `MimamoriTai SignUpSignIn` に紐づく IdP | **`Email One Time Passcode` のみ。LINE は未登録** ← 原因 #3 の確証 |
 | アプリ登録 | `MimamoriTai Web`（objectId: `707a5eb9-3a28-40a5-a533-0db0f90bdb3b`） |
-| リダイレクト URI（修正前） | `http://localhost:5199/signin-oidc` / `https://localhost:7199/signin-oidc` / `https://app-mimamoritai-hack.azurewebsites.net/signin-oidc` ← 原因 #6 の確証 |
+| リダイレクト URI（修正前） | `http://localhost:5199/signin-oidc` / `https://localhost:7199/signin-oidc` / `https://<your-app>.azurewebsites.net/signin-oidc` ← 原因 #6 の確証 |
 
 > `identityProviders` の一覧取得は `IdentityProvider.Read.All` が必要で、Azure CLI の既定トークンでは **HTTP 403**（`AADB2C: The application does not have any of the required delegated permissions`）になります。`setup-line-entra-idp.ps1` 実行時に同じエラーが出た場合は「トラブルシューティング › Graph API 呼び出しが 401/403 で失敗する」を参照してください。
 
@@ -177,7 +177,7 @@ ciamlogin 形式に戻し、`Auth:CallbackPath` を `/signin-oidc` に戻すだ�
 1. Microsoft Entra 管理センター › **アプリの登録** › 対象アプリを開きます
    （このリポジトリの既定 App ID: `dcc221af-ceb0-47fe-baac-837e8853423c`）。
 2. **認証** › **プラットフォームを追加** › **Web** で、**リダイレクト URI** に以下を登録します。
-   - 本番: `https://app-mimamoritai-hack.azurewebsites.net/signin-oidc`
+   - 本番: `https://<your-app>.azurewebsites.net/signin-oidc`
    - ローカル: `https://localhost:7215/signin-oidc`（および必要なら `http://localhost:5234/signin-oidc`）
    - ⚠️ **末尾スラッシュ・大文字小文字を含めて完全一致**でなければ `AADSTS50011` になります。
    - ⚠️ **`launchSettings.json` のポートと必ず一致させること。** 実際にこのテナントでは `5199`/`7199` しか登録されておらず、`launchSettings.json` の `5234`/`7215` と食い違っていました（原因 #6）。
@@ -412,7 +412,7 @@ Auth__Enabled / Auth__Authority / Auth__ClientId / Auth__ClientSecret / Auth__Pr
 デプロイ成否は「**そのデプロイでしか存在しないページ**」で判定してください。
 
 ```powershell
-$app = "https://app-mimamoritai-hack.azurewebsites.net"
+$app = "https://<your-app>.azurewebsites.net"
 
 # 1) まずアプリが生きているか（最優先。503 なら 3-B-1b へ）
 curl.exe -s -o NUL -w "GET /          -> %{http_code}`n" "$app/"
@@ -439,11 +439,11 @@ InprogressInstances: 0, SuccessfulInstances: 0, FailedInstances: 1
 
 ```powershell
 # 方法1: 直近の起動ログを JSON で取得（早い）
-az webapp log startup show -n app-mimamoritai-hack -g rg-mimamoritai-hackathon > $env:TEMP\startup.json
+az webapp log startup show -n <your-app> -g rg-mimamoritai-hackathon > $env:TEMP\startup.json
 # JSON の content フィールドに \n 区切りでログが入っている。Unhandled / exit code で検索する
 
 # 方法2: ログ一式をダウンロードして展開（確実。スタックトレースが読める）
-az webapp log download -n app-mimamoritai-hack -g rg-mimamoritai-hackathon --log-file $env:TEMP\logs.zip
+az webapp log download -n <your-app> -g rg-mimamoritai-hackathon --log-file $env:TEMP\logs.zip
 Expand-Archive $env:TEMP\logs.zip -DestinationPath $env:TEMP\applogs -Force
 Get-ChildItem $env:TEMP\applogs\LogFiles\StartupLogs\*_failure.log | Get-Content -Tail 80
 ```
@@ -458,7 +458,7 @@ ContainerStream: Unhandled exception.
 /opt/startup/startup.sh: line 20: 1872 Aborted (core dumped) dotnet "MimamoriTai.Web.dll"
 Container has finished running with exit code: 134
 ContainerStatus: Site is blocked due to multiple, consecutive cold start failures
-ContainerStatus: Site: app-mimamoritai-hack stopped.
+ContainerStatus: Site: <your-app> stopped.
 ```
 
 `Program.cs` の fail-fast ガード（非 Development 環境で `DataProtection:KeyDirectory` が
@@ -469,11 +469,11 @@ ContainerStatus: Site: app-mimamoritai-hack stopped.
 
 ```powershell
 # Linux App Service で永続化されるのは /home 配下のみ。ここ以外だと再起動で鍵が消える
-az webapp config appsettings set -g rg-mimamoritai-hackathon -n app-mimamoritai-hack `
+az webapp config appsettings set -g rg-mimamoritai-hackathon -n <your-app> `
   --settings 'DataProtection__KeyDirectory=/home/data/dataprotection-keys'
 
 # 連続起動失敗でサイトごと停止していた場合、設定投入だけでは復旧しない
-az webapp restart -g rg-mimamoritai-hackathon -n app-mimamoritai-hack
+az webapp restart -g rg-mimamoritai-hackathon -n <your-app>
 # （State: Stopped まで行っていたら az webapp start が必要）
 ```
 
@@ -490,7 +490,7 @@ App Service 側:
 
 ```powershell
 $rg  = "rg-mimamoritai-hackathon"
-$app = "app-mimamoritai-hack"
+$app = "<your-app>"
 
 # 1) 現在値を JSON でローカルにバックアップ（画面に出さない）
 az webapp config appsettings list -g $rg -n $app `
@@ -571,13 +571,13 @@ for ($i=1; $i -le 20; $i++) {
 `Auth__ProviderName=line` を追加しても構いません（実測環境では明示しています）。
 
 LINE Developers 側のコールバック URL に
-`https://app-mimamoritai-hack.azurewebsites.net/signin-line` が登録済みであることを確認してください
+`https://<your-app>.azurewebsites.net/signin-line` が登録済みであることを確認してください
 （本手順書作成時点で登録済み）。
 
 ### 3-B-5. 本番検証コマンド
 
 ```powershell
-$app = "https://app-mimamoritai-hack.azurewebsites.net"
+$app = "https://<your-app>.azurewebsites.net"
 
 # 1) 302 になり、Location のホストが access.line.me であること
 curl.exe -s -i -o - "$app/auth/login?returnUrl=/" | Select-String "^HTTP/|^location:"
@@ -590,7 +590,7 @@ curl.exe -s -i "$app/auth/login?returnUrl=/" `
 ```
 
 - ✅ 期待 1: `HTTP/2 302` ＋ `location: https://access.line.me/oauth2/v2.1/authorize?...`
-- ✅ 期待 2: `redirect_uri=https://app-mimamoritai-hack.azurewebsites.net/signin-line`
+- ✅ 期待 2: `redirect_uri=https://<your-app>.azurewebsites.net/signin-line`
   （**`http://` になっていたら ForwardedHeaders が効いていません**。`UseMimamoriTaiForwardedHeaders()` が
   `UseAuthentication()` より**前**で呼ばれているか確認してください）
 - 続けてブラウザで `$app/auth/login` を開き、LINE ログイン → `$app/auth/me` が
@@ -598,7 +598,7 @@ curl.exe -s -i "$app/auth/login?returnUrl=/" `
 
 #### 3-B-5 の実測結果（2026-08-11・本番で成功した記録）
 
-以下は実際に本番 `app-mimamoritai-hack` で構成 B へ切り替えた直後の実測値です。
+以下は実際に本番 `<your-app>` で構成 B へ切り替えた直後の実測値です。
 **新しく切り替えたときは、この値と一致することを確認してください。**
 
 ```
@@ -612,7 +612,7 @@ GET /admin         -> 200
 GET /auth/login    -> 302
    host          : access.line.me
    path          : /oauth2/v2.1/authorize
-   redirect_uri  : https://app-mimamoritai-hack.azurewebsites.net/signin-line
+   redirect_uri  : https://<your-app>.azurewebsites.net/signin-line
    scope         : openid profile email      ← offline_access が付かない（LINE 分岐が効いている）
    response_type : code
    pkce          : S256
@@ -642,7 +642,7 @@ Invoke-RestMethod -Uri 'https://api.line.me/v2/bot/channel/webhook/endpoint' -He
 実測結果:
 
 ```
-webhook endpoint: https://app-mimamoritai-hack.azurewebsites.net/webhooks/line  active=True
+webhook endpoint: https://<your-app>.azurewebsites.net/webhooks/line  active=True
 test1: success=True statusCode=200 reason=OK
 test2: success=True statusCode=200 reason=OK
 test3: success=True statusCode=200 reason=OK
