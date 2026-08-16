@@ -167,4 +167,63 @@ public class WeatherOverlayGeometryTests
 
         Assert.Contains("気温の記録なし", text);
     }
+
+    [Theory]
+    [InlineData(0.9, 1)]
+    [InlineData(1.7, 2)]
+    [InlineData(2.3, 2.5)]
+    [InlineData(4.0, 5)]
+    [InlineData(7.0, 10)]
+    [InlineData(230, 250)]
+    public void Rounds_A_Step_Up_To_A_Number_People_Read_Easily(double raw, double expected) =>
+        Assert.Equal(expected, WeatherOverlayGeometry.NiceStep(raw));
+
+    /// <summary>
+    /// The two axes only mean anything side by side if they hang off the same gridlines,
+    /// so both are forced to exactly four equal steps.
+    /// </summary>
+    [Fact]
+    public void Builds_Both_Axes_With_The_Same_Number_Of_Steps()
+    {
+        var energy = WeatherOverlayGeometry.Axis(0, 1180);
+        var degrees = WeatherOverlayGeometry.Axis(1.4, 12.6);
+
+        Assert.Equal(energy.Low + (energy.Step * WeatherOverlayGeometry.Divisions), energy.High, 6);
+        Assert.Equal(degrees.Low + (degrees.Step * WeatherOverlayGeometry.Divisions), degrees.High, 6);
+    }
+
+    [Fact]
+    public void Never_Leaves_A_Value_Above_The_Top_Gridline()
+    {
+        foreach (var (low, high) in new[] { (0d, 1180d), (1.4, 12.6), (-3.2, 4.1), (0d, 7d), (18d, 18.2) })
+        {
+            var axis = WeatherOverlayGeometry.Axis(low, high);
+
+            Assert.True(axis.High >= high - 1e-9, $"{high} did not fit under {axis.High}");
+            Assert.True(axis.Low <= low + 1e-9, $"{low} fell below {axis.Low}");
+        }
+    }
+
+    [Fact]
+    public void Starts_The_Electricity_Axis_At_Zero()
+    {
+        var axis = WeatherOverlayGeometry.Axis(0, 1180);
+
+        Assert.Equal(0, axis.Low);
+    }
+
+    [Fact]
+    public void Places_Gridlines_From_The_Baseline_Up()
+    {
+        Assert.Equal(WeatherOverlayGeometry.PlotBottom, WeatherOverlayGeometry.TickY(0));
+        Assert.Equal(WeatherOverlayGeometry.PlotTop, WeatherOverlayGeometry.TickY(WeatherOverlayGeometry.Divisions), 6);
+        Assert.True(WeatherOverlayGeometry.TickY(1) > WeatherOverlayGeometry.TickY(2));
+    }
+
+    [Fact]
+    public void Shortens_Long_Watt_Hour_Labels_To_Kilowatt_Hours()
+    {
+        Assert.Equal("900", WeatherOverlayGeometry.EnergyTick(900));
+        Assert.Equal("1.2k", WeatherOverlayGeometry.EnergyTick(1200));
+    }
 }

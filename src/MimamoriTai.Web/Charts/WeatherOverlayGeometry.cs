@@ -103,6 +103,76 @@ public static class WeatherOverlayGeometry
         return (low, high);
     }
 
+    /// <summary>Number of gaps between gridlines. Both axes use the same count so their ticks line up.</summary>
+    public const int Divisions = 4;
+
+    /// <summary>
+    /// An axis rounded outwards to readable numbers, always with <see cref="Divisions"/> equal
+    /// steps. Both axes are built this way so that the left-hand watt-hours and the right-hand
+    /// degrees sit on the very same gridlines -- otherwise the eye reads two grids at once and
+    /// the comparison the chart exists for becomes guesswork.
+    /// </summary>
+    public static (double Low, double High, double Step) Axis(double low, double high)
+    {
+        if (double.IsNaN(low) || double.IsNaN(high) || high <= low)
+        {
+            high = low + 1;
+        }
+
+        var step = NiceStep((high - low) / Divisions);
+
+        // Rounding the bottom outwards can push the top past the last gridline; widen the
+        // step until the whole range fits rather than clipping a value off the chart.
+        for (var guard = 0; guard < 8; guard++)
+        {
+            var start = Math.Floor(low / step) * step;
+            if (start + (step * Divisions) >= high - 1e-9)
+            {
+                return (start, start + (step * Divisions), step);
+            }
+
+            step = NiceStep(step * 1.5);
+        }
+
+        return (low, low + (step * Divisions), step);
+    }
+
+    /// <summary>Rounds a raw step up to 1, 2, 2.5 or 5 times a power of ten.</summary>
+    public static double NiceStep(double raw)
+    {
+        if (raw <= 0 || double.IsNaN(raw) || double.IsInfinity(raw))
+        {
+            return 1;
+        }
+
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(raw)));
+        var normalised = raw / magnitude;
+
+        var nice = normalised switch
+        {
+            <= 1 => 1,
+            <= 2 => 2,
+            <= 2.5 => 2.5,
+            <= 5 => 5,
+            _ => 10,
+        };
+
+        return nice * magnitude;
+    }
+
+    /// <summary>Vertical position of gridline <paramref name="index"/>, counted up from the baseline.</summary>
+    public static double TickY(int index) =>
+        PlotBottom - (index / (double)Divisions * (PlotBottom - PlotTop));
+
+    /// <summary>The same position as a percentage down the frame, for placing HTML labels beside the SVG.</summary>
+    public static double TickTopPercent(int index) => TickY(index) / ViewHeight * 100;
+
+    /// <summary>Formats a watt-hour tick, switching to kWh once the numbers get long.</summary>
+    public static string EnergyTick(double wh) =>
+        wh >= 1000
+            ? $"{(wh / 1000).ToString("0.#", CultureInfo.InvariantCulture)}k"
+            : F(wh);
+
     public static double DegreeY(double celsius, (double Low, double High) scale)
     {
         var span = scale.High - scale.Low;

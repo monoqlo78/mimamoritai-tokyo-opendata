@@ -13,8 +13,9 @@
         <figcaption>
             <span>@Caption</span>
             <span class="overlay-legend" aria-hidden="true">
-                <span class="legend-bar">電気の使用量</span>
-                <span class="legend-band">外の気温</span>
+                <span class="legend-bar">電気の使用量（Wh・左軸）</span>
+                <span class="legend-high">最高気温</span>
+                <span class="legend-low">最低気温（℃・右軸）</span>
             </span>
         </figcaption>
     }
@@ -25,15 +26,23 @@
     }
     else
     {
-        var max = G.MaxEnergy(Points);
-        var scale = G.DegreeScale(Points);
+        var rawMax = G.MaxEnergy(Points);
+        var energyAxis = G.Axis(0, rawMax <= 0 ? 1 : rawMax);
+        var max = energyAxis.High;
+        var degreeAxis = G.Axis(G.DegreeScale(Points).Low, G.DegreeScale(Points).High);
+        var scale = (degreeAxis.Low, degreeAxis.High);
         var width = G.BarWidth(Points.Count);
 
         <div class="weather-overlay-plot">
-            <p class="overlay-scale" aria-hidden="true">
-                <span>電気 0〜@G.F(Math.Round(max))Wh</span>
-                <span>気温 @G.F(scale.Low)〜@G.F(scale.High)℃</span>
-            </p>
+            @* Axis labels are HTML rather than SVG text: the plot is stretched to fit the
+               card, and text inside a stretched viewBox comes out squashed. Each label is
+               pinned to the exact gridline it belongs to. *@
+            <div class="overlay-axis-labels is-left" aria-hidden="true">
+                @for (var t = G.Divisions; t >= 0; t--)
+                {
+                    <span style="top: @G.F(G.TickTopPercent(t))%">@G.EnergyTick(energyAxis.Low + (energyAxis.Step * t))</span>
+                }
+            </div>
 
             <svg viewBox="0 0 @G.F(G.ViewWidth) @G.F(G.ViewHeight)" role="img"
                  aria-label="@AriaLabel" preserveAspectRatio="none">
@@ -45,6 +54,12 @@
                         <stop offset="100%" class="overlay-stop-bottom" />
                     </linearGradient>
                 </defs>
+
+                @for (var t = 1; t <= G.Divisions; t++)
+                {
+                    <line x1="0" y1="@G.F(G.TickY(t))" x2="@G.F(G.ViewWidth)" y2="@G.F(G.TickY(t))"
+                          class="overlay-grid" />
+                }
 
                 <line x1="0" y1="@G.F(G.PlotBottom)" x2="@G.F(G.ViewWidth)" y2="@G.F(G.PlotBottom)"
                       class="overlay-axis" />
@@ -72,9 +87,16 @@
                 <polyline points="@G.Line(Points, true, scale)" class="overlay-line is-high" />
                 <polyline points="@G.Line(Points, false, scale)" class="overlay-line is-low" />
             </svg>
+
+            <div class="overlay-axis-labels is-right" aria-hidden="true">
+                @for (var t = G.Divisions; t >= 0; t--)
+                {
+                    <span style="top: @G.F(G.TickTopPercent(t))%">@G.F(degreeAxis.Low + (degreeAxis.Step * t))</span>
+                }
+            </div>
         </div>
 
-        <ul class="bar-chart-labels" aria-hidden="true">
+        <ul class="bar-chart-labels overlay-day-labels" aria-hidden="true">
             @foreach (var point in Points)
             {
                 <li class="@(point.IsToday ? "is-highlighted" : null)">@point.Label</li>
