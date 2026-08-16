@@ -128,6 +128,14 @@
 
 キャプチャ時の注意は §10 と同じです。
 
+取得済みのファイル：
+
+| # | ファイル | 撮影方法 |
+|---|---|---|
+| 1 | `docs/captures/01-cooling-suggestion.png` | 冷房提案は暑さ指数25以上（警戒）で出る。夏の夜間など東京23区が25未満のときは、同じ東京都のWBGT予測CSV内の**小笠原（父島・地点コード44301）**を `OpenData__PointCode` で指定すれば、東京都のオープンデータのまま警戒帯を再現できる |
+| 2 | `docs/captures/02-power-temperature-chart.png` | トップの「電気の使用量と外の気温」を要素キャプチャ |
+| 3 | `docs/captures/03-hazard-confirm-dialog.png` | 電気ストーブの「つける」で出るハザード確認。**ブラウザ標準の confirm なので Playwright では撮れない**。Edge をアプリモード（`--app=` ＋専用 `--user-data-dir`）で開き、OSのウィンドウキャプチャで撮ること |
+
 ---
 
 ## 9. 提出物の所在
@@ -137,7 +145,7 @@
 | プレゼン資料 | 更新済み（16枚・16:9・8/16時点） | `docs/mimamoritai-deck.pptx` / `.pdf` |
 | デモ動画（3分） | 収録済み | `docs/demo/mimamoritai-demo.mp4` |
 | 2分プレゼン動画 | **未収録**（8/26〜8/30に収録） | — |
-| 画面キャプチャ3点 | **未取得** | — |
+| 画面キャプチャ3点 | 取得済み（8/16時点） | `docs/captures/` |
 | 開発記録 | 公開済み | `docs/ARTICLE.md` |
 | 稼働証跡 | あり | `docs/EVIDENCE.md` |
 
