@@ -395,9 +395,18 @@ public sealed class ActivityService(IAppDbContext db)
     /// of the days before it, so the dashboard can draw "now" against "usually".
     /// </summary>
     public async Task<HourlyEnergyProfile> GetHourlyEnergyAsync(
-        Guid householdId, int days, CancellationToken ct = default)
+        Guid householdId, int days, CancellationToken ct = default) =>
+        await GetHourlyEnergyAsync(householdId, days, HouseholdTime.LocalDate(DateTimeOffset.UtcNow), ct);
+
+    /// <inheritdoc cref="GetHourlyEnergyAsync(Guid, int, CancellationToken)"/>
+    /// <param name="today">
+    /// The local date to treat as today. Callers that hold a <see cref="TimeProvider"/>
+    /// should pass it rather than let this service read the wall clock, so a background
+    /// job and its tests see the same day.
+    /// </param>
+    public async Task<HourlyEnergyProfile> GetHourlyEnergyAsync(
+        Guid householdId, int days, DateOnly today, CancellationToken ct = default)
     {
-        var today = HouseholdTime.LocalDate(DateTimeOffset.UtcNow);
         var from = HouseholdTime.StartOfLocalDayUtc(today.AddDays(-(days - 1)));
 
         var events = await db.DeviceEvents

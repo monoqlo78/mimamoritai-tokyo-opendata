@@ -200,6 +200,152 @@ public class WatchAlertServiceTests
         Assert.Equal(rejected, WatchAlertService.InventsApplianceState(text, reason));
     }
 
+    /// <summary>
+    /// The case this feature exists for. A warning is out, and the meters say the house
+    /// has drawn almost nothing for hours -- which most often means she is not in it.
+    /// Neither figure means much alone; together they are the one push in this app worth
+    /// interrupting a family for.
+    /// </summary>
+    [Fact]
+    public async Task Warning_Plus_A_Dark_House_Is_Escalated_To_Call_Her_Now()
+    {
+        using var db = await SeedFortnightThenSilenceAsync();
+        var clock = new FakeTimeProvider(EveningUtc);
+        var line = new FakeLineMessagingClient();
+        var service = new WatchAlertService(
+            db.Context, line, clock, Settings(), FakeLineRecipientResolver.From("test-family-group"),
+            null, null, new FakeDisasterProvider(
+                Advisory(DisasterKind.HeavyRainBand, "顕著な大雨に関する気象情報")));
+
+        await service.EvaluateAsync(db.HouseholdId);
+
+        var notice = Assert.Single(line.PushedCards, c => c.Card.RiskLabel == "至急ご連絡ください");
+        Assert.Equal("顕著な大雨に関する気象情報", notice.Card.Title);
+        Assert.Contains("顕著な大雨に関する気象情報が出ています", notice.Card.Text);
+        Assert.Contains("外出されているかもしれません", notice.Card.Text);
+        // The share is measured, not asserted: it has to come out of this household's own
+        // hours against its own fortnight.
+        Assert.Matches("いつもの[0-9]+％まで落ちています", notice.Card.Text);
+
+        // The calm notice must not also go out; one advisory, one push.
+        Assert.DoesNotContain(line.PushedCards, c => c.Card.RiskLabel == "ご家族の様子を確認しましょう");
+
+        var row = Assert.Single(db.Context.WatchAlerts, a => a.Reason.StartsWith("防災情報 留守の可能性 "));
+        Assert.Equal(RiskLevel.High, row.RiskLevel);
+    }
+
+    /// <summary>
+    /// The watch job polls every few minutes and a 線状降水帯 stays up for hours. The
+    /// urgent notice is deduplicated on the advisory's own identity, exactly like the
+    /// calm one.
+    /// </summary>
+    [Fact]
+    public async Task The_Escalated_Notice_Is_Sent_Once_Per_Advisory()
+    {
+        using var db = await SeedFortnightThenSilenceAsync();
+        var clock = new FakeTimeProvider(EveningUtc);
+        var line = new FakeLineMessagingClient();
+        var service = new WatchAlertService(
+            db.Context, line, clock, Settings(), FakeLineRecipientResolver.From("test-family-group"),
+            null, null, new FakeDisasterProvider(
+                Advisory(DisasterKind.HeavyRainBand, "顕著な大雨に関する気象情報")));
+
+        await service.EvaluateAsync(db.HouseholdId);
+        await service.EvaluateAsync(db.HouseholdId);
+
+        Assert.Single(line.PushedCards, c => c.Card.RiskLabel == "至急ご連絡ください");
+    }
+
+    /// <summary>
+    /// A household drawing its ordinary electricity through a warning gets the calm
+    /// notice, not the telephone call. Escalating that would make the urgent wording
+    /// mean nothing within a season.
+    /// </summary>
+    [Fact]
+    public async Task A_House_Being_Lived_In_Through_A_Warning_Is_Not_Escalated()
+    {
+        using var db = await SeedFortnightThenSilenceAsync(quietToday: false);
+        var clock = new FakeTimeProvider(EveningUtc);
+        var line = new FakeLineMessagingClient();
+        var service = new WatchAlertService(
+            db.Context, line, clock, Settings(), FakeLineRecipientResolver.From("test-family-group"),
+            null, null, new FakeDisasterProvider(
+                Advisory(DisasterKind.HeavyRainBand, "顕著な大雨に関する気象情報")));
+
+        await service.EvaluateAsync(db.HouseholdId);
+
+        Assert.DoesNotContain(line.PushedCards, c => c.Card.RiskLabel == "至急ご連絡ください");
+        Assert.Single(line.PushedCards, c => c.Card.RiskLabel == "ご家族の様子を確認しましょう");
+    }
+
+    /// <summary>
+    /// A dark house on an ordinary evening is somebody out for dinner. Without emergency
+    /// information over her area there is nothing here to tell anyone.
+    /// </summary>
+    [Fact]
+    public async Task A_Dark_House_Alone_Is_Not_An_Emergency()
+    {
+        using var db = await SeedFortnightThenSilenceAsync();
+        var clock = new FakeTimeProvider(EveningUtc);
+        var line = new FakeLineMessagingClient();
+        var service = new WatchAlertService(
+            db.Context, line, clock, Settings(), FakeLineRecipientResolver.From("test-family-group"),
+            null, null, new FakeDisasterProvider());
+
+        await service.EvaluateAsync(db.HouseholdId);
+
+        Assert.DoesNotContain(line.PushedCards, c => c.Card.RiskLabel == "至急ご連絡ください");
+    }
+
+    /// <summary>
+    /// A fortnight of ordinary evenings, then a today that either matches them or falls
+    /// silent from 16:00. The clock is <see cref="EveningUtc"/> (19:00 JST), so the last
+    /// whole hours the rule examines are 16, 17 and 18.
+    /// </summary>
+    private static async Task<TestDb> SeedFortnightThenSilenceAsync(bool quietToday = true)
+    {
+        var light = TestDb.Light();
+        var db = await new TestDb().SeedAsync(light);
+        var today = HouseholdTime.LocalDate(EveningUtc);
+
+        void Draw(DateOnly date, double fromHour, double toHour, double watts = 200)
+        {
+            // Every quarter hour, which is inside the 30-minute integration gap, so the
+            // draw reads as continuous without seeding a poll's worth of rows.
+            for (var h = fromHour; h <= toHour + 0.001; h += 0.25)
+            {
+                db.Context.PlugMiniReadings.Add(new PlugMiniReading
+                {
+                    HouseholdId = db.HouseholdId,
+                    DeviceId = light.Id,
+                    OccurredAtUtc = HouseholdTime.StartOfLocalDayUtc(date).AddHours(h),
+                    ApproxWatts = watts
+                });
+            }
+        }
+
+        for (var back = 1; back <= 13; back++)
+        {
+            Draw(today.AddDays(-back), 9, 21);
+        }
+
+        // Today: lived in all morning, then either the same evening as always or a socket
+        // that keeps reporting while drawing nothing. The poll carries on either way --
+        // silence in this app is a measured zero, never an absence of rows.
+        if (quietToday)
+        {
+            Draw(today, 9, 15.75);
+            Draw(today, 16, 19, watts: 0);
+        }
+        else
+        {
+            Draw(today, 9, 19);
+        }
+
+        await db.Context.SaveChangesAsync();
+        return db;
+    }
+
     private static async Task<TestDb> SeedHighRiskHouseholdAsync()
     {
         // A device is registered but no DeviceEvent is created for "today", and the

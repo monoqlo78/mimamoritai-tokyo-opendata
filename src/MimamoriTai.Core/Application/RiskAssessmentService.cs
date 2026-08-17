@@ -165,6 +165,30 @@ public sealed record ComfortSuggestion(
 }
 
 /// <summary>
+/// A stretch of recent hours in which the house drew far less electricity than those
+/// same clock hours usually draw.
+///
+/// <para>
+/// On an ordinary day this is not worth telling anyone about -- people go shopping. It
+/// exists because of one case: 気象庁 has emergency information out over her area and the
+/// house has been dark for hours, which is the difference between "she is riding it out
+/// indoors" and "she may be outside in it".
+/// </para>
+/// </summary>
+/// <param name="Hours">How many whole hours the comparison covers.</param>
+/// <param name="FromHour">Local clock hour the stretch starts at, for wording a message.</param>
+/// <param name="RecentWh">Watt-hours actually drawn over those hours.</param>
+/// <param name="UsualWh">Watt-hours those same clock hours usually draw.</param>
+public sealed record QuietSpell(int Hours, int FromHour, double RecentWh, double UsualWh)
+{
+    /// <summary>Recent draw as a share of the usual one.</summary>
+    public double Ratio => UsualWh <= 0 ? 1 : RecentWh / UsualWh;
+
+    /// <summary>The same share as a whole percentage, so messages need not repeat the maths.</summary>
+    public int PercentOfUsual => (int)Math.Round(Ratio * 100);
+}
+
+/// <summary>
 /// Deterministic, rule based risk scoring. Intentionally NOT delegated to the LLM:
 /// the model may phrase the result, but never decides whether something is abnormal.
 /// </summary>
@@ -207,6 +231,86 @@ public sealed class RiskAssessmentService(
 
     public static bool IsQuietHour(TimeOnly local) =>
         local.Hour >= QuietStartHour || local.Hour < QuietEndHour;
+
+    /// <summary>How many whole hours back <see cref="DetectQuiet"/> looks.</summary>
+    public const int AwayLookbackHours = 3;
+
+    /// <summary>
+    /// Share of the usual draw below which the hours read as "nobody is in" rather than
+    /// "it is a quiet afternoon". Deliberately low: this figure only ever becomes a
+    /// message when emergency information is already out, and the cost of being wrong is
+    /// telephoning a woman who is perfectly fine and sitting down.
+    /// </summary>
+    public const double AwayRatio = 0.25;
+
+    /// <summary>
+    /// Watt-hours the window must usually carry before its absence means anything.
+    /// Without a floor, an hour whose norm is 2Wh would report the house empty over a
+    /// rounding error.
+    /// </summary>
+    public const double AwayMinUsualWh = 30;
+
+    /// <summary>Days of history needed before "usual" is a number worth comparing against.</summary>
+    public const int AwayMinUsualDays = 3;
+
+    /// <summary>
+    /// Reports the recent hours as unusually dark, or null when they are ordinary, when
+    /// there is not enough history to say, or when the house is only meant to be still.
+    ///
+    /// <para>
+    /// The newest bucket of <see cref="HourlyEnergyProfile"/> is the hour currently
+    /// running, so it is always short of a full hour's electricity and is left out --
+    /// including it would report every household as quiet, every hour, forever.
+    /// </para>
+    /// </summary>
+    public static QuietSpell? DetectQuiet(
+        HourlyEnergyProfile profile, int lookbackHours = AwayLookbackHours)
+    {
+        if (profile.UsualDayCount < AwayMinUsualDays
+            || profile.Today.Count < 24
+            || profile.Usual.Count < 24
+            || lookbackHours < 1)
+        {
+            return null;
+        }
+
+        var last = profile.Today.Count - 2; // the in-progress hour is index Count - 1
+        var first = last - lookbackHours + 1;
+        if (first < 0)
+        {
+            return null;
+        }
+
+        // A house is supposed to be dark while everyone is asleep. Comparing those hours
+        // would fire at the same time every night, and a nightly alert is one the family
+        // learns to swipe away -- taking the morning it mattered with it.
+        for (var i = first; i <= last; i++)
+        {
+            if (IsQuietHour(new TimeOnly((profile.StartHour + i) % 24, 0)))
+            {
+                return null;
+            }
+        }
+
+        var recent = 0.0;
+        var usual = 0.0;
+        for (var i = first; i <= last; i++)
+        {
+            recent += profile.Today[i];
+            usual += profile.Usual[i];
+        }
+
+        if (usual < AwayMinUsualWh || recent > usual * AwayRatio)
+        {
+            return null;
+        }
+
+        return new QuietSpell(
+            lookbackHours,
+            (profile.StartHour + first) % 24,
+            Math.Round(recent, 2),
+            Math.Round(usual, 2));
+    }
 
     /// <summary>
     /// The time this household usually gets going, taken as the median of the days we

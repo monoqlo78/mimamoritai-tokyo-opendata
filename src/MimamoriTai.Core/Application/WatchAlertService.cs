@@ -254,6 +254,14 @@ public sealed class WatchAlertService(
     private const string DisasterReasonPrefix = "防災情報 ";
 
     /// <summary>
+    /// Marker for the escalated form. Kept separate from <see cref="DisasterReasonPrefix"/>
+    /// on purpose: the calm notice may already have gone out for this same advisory, and
+    /// the household falling dark afterwards is new information that must not be
+    /// swallowed by the earlier one's deduplication.
+    /// </summary>
+    private const string DisasterAwayReasonPrefix = "防災情報 留守の可能性 ";
+
+    /// <summary>
     /// Tells the family that emergency information covers the household's area, and --
     /// this is the point -- pairs it with whether the appliances have been used today.
     ///
@@ -298,6 +306,25 @@ public sealed class WatchAlertService(
         var marker = DisasterReasonPrefix + advisory.DedupeKey;
         var alreadySent = await db.WatchAlerts
             .AnyAsync(a => a.PersonId == resident.Id && a.Reason == marker, ct);
+
+        // The house being dark through a warning is the one case worth interrupting a
+        // family for, so it is checked before the calm notice's deduplication rather
+        // than after it: the quiet may well have started hours into an advisory the
+        // family was already told about.
+        var away = await DetectAwayAsync(householdId, ct);
+        var awayMarker = DisasterAwayReasonPrefix + advisory.DedupeKey;
+
+        if (away is not null)
+        {
+            var awaySent = await db.WatchAlerts
+                .AnyAsync(a => a.PersonId == resident.Id && a.Reason == awayMarker, ct);
+
+            if (!awaySent)
+            {
+                return await SendDisasterAwayAsync(
+                    householdId, resident, advisory, away, awayMarker, ct);
+            }
+        }
 
         if (alreadySent)
         {
@@ -347,6 +374,81 @@ public sealed class WatchAlertService(
         await db.SaveChangesAsync(ct);
 
         return result.Success ? $"防災情報をお知らせしました（{text}）" : null;
+    }
+
+    /// <summary>
+    /// Reads the last whole hours of electricity and reports them as unusually dark, or
+    /// null. Deliberately delegates the judgement to <see cref="RiskAssessmentService"/>:
+    /// this service decides who to tell, never what counts as abnormal.
+    /// </summary>
+    private async Task<QuietSpell?> DetectAwayAsync(Guid householdId, CancellationToken ct)
+    {
+        var profile = await new ActivityService(db).GetHourlyEnergyAsync(
+            householdId, 14, HouseholdTime.LocalDate(clock.GetUtcNow()), ct);
+        return RiskAssessmentService.DetectQuiet(profile);
+    }
+
+    /// <summary>
+    /// The escalated notice: emergency information is out over her area *and* the house
+    /// has drawn almost nothing for hours, which most often means nobody is in it.
+    ///
+    /// <para>
+    /// This is the only push in the app that asks the family to act immediately, and it
+    /// is worded to be acted on rather than read: what is happening, what the meters
+    /// actually show, and the one thing to do about it. Every figure in it comes from
+    /// data the app already holds -- the advisory is 気象庁's own wording, and the
+    /// percentage is this household's own recent hours against its own fortnight.
+    /// </para>
+    /// </summary>
+    private async Task<string?> SendDisasterAwayAsync(
+        Guid householdId,
+        Person resident,
+        DisasterAdvisory advisory,
+        QuietSpell away,
+        string marker,
+        CancellationToken ct)
+    {
+        var headline = advisory.Kind == DisasterKind.Earthquake
+            ? $"{advisory.AreaName}を震源とする地震がありました（{advisory.Detail}）。"
+            : $"{advisory.AreaName}に{advisory.Headline}が出ています。";
+
+        var text = headline
+            + $"{resident.DisplayName}のお宅では{away.FromHour}時ごろからの{away.Hours}時間、"
+            + $"電気の使用がいつもの{away.PercentOfUsual}％まで落ちています。"
+            + "外出されているかもしれません。すぐにご連絡のうえ、安全な場所にいるかご確認ください。";
+
+        var recipients = await recipientResolver.ResolveAsync(householdId, ct);
+        var origin = settings.PublicBaseUrl.TrimEnd('/');
+        var hasOrigin = !string.IsNullOrWhiteSpace(origin)
+            && origin.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+        var result = await PushToAllAsync(
+            recipients,
+            new LineAlertCard(
+                Title: advisory.Kind == DisasterKind.Earthquake ? "地震がありました" : advisory.Headline,
+                Text: text,
+                RiskLabel: "至急ご連絡ください",
+                ImageUrl: hasOrigin ? $"{origin}{MascotImagePath}" : null,
+                LinkUrl: hasOrigin ? origin : null),
+            ct);
+
+        // Recorded as High so the family's own history shows this apart from the calm
+        // notice, and so the row cannot be mistaken for the informational one.
+        db.WatchAlerts.Add(new WatchAlert
+        {
+            HouseholdId = householdId,
+            PersonId = resident.Id,
+            RiskLevel = RiskLevel.High,
+            Score = 0,
+            Reason = marker,
+            Message = text,
+            SentAtUtc = clock.GetUtcNow(),
+            Success = result.Success,
+            Error = result.Error
+        });
+        await db.SaveChangesAsync(ct);
+
+        return result.Success ? $"防災情報と留守の可能性をお知らせしました（{text}）" : null;
     }
 
     /// <summary>
