@@ -24,6 +24,7 @@ builder.Services.AddScoped<DeviceSettingsService>();
 builder.Services.AddScoped<AdminConsoleService>();
 builder.Services.AddScoped<LiffSessionService>();
 builder.Services.AddOpenApi();
+builder.Services.AddConsoleQuestionSupport(builder.Configuration);
 builder.Services.AddHostedService<WatchAlertBackgroundService>();
 builder.Services.AddHostedService<SwitchBotPollingBackgroundService>();
 builder.Services.AddHostedService<DemoDataTopUpBackgroundService>();
@@ -71,6 +72,8 @@ app.UseWhen(
         && !ctx.Request.Path.StartsWithSegments("/health"),
     branch => branch.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
 app.UseHttpsRedirection();
+app.UseCors();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
@@ -87,6 +90,7 @@ app.MapDeviceSyncEndpoints();
 app.MapSwitchBotConnectionEndpoints();
 app.MapAuthEndpoints();
 app.MapFabricSyncEndpoints();
+app.MapConsoleQuestionEndpoints();
 
 await InitializeDatabaseAsync(app);
 

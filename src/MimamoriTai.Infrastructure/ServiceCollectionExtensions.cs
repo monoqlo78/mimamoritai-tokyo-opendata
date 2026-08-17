@@ -25,7 +25,7 @@ namespace MimamoriTai.Infrastructure;
 public sealed record IntegrationStatus(
     string DeviceProvider,
     bool SwitchBotConfigured,
-    bool OrcaRouterConfigured,
+    bool ModelRouterConfigured,
     bool FabricConfigured,
     bool LineConfigured,
     bool EventhouseConfigured,
@@ -53,7 +53,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddMimamoriTaiInfrastructure(
         this IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<OrcaRouterOptions>(configuration.GetSection(OrcaRouterOptions.SectionName));
+        services.Configure<AzureModelRouterOptions>(configuration.GetSection(AzureModelRouterOptions.SectionName));
         services.Configure<SwitchBotOptions>(configuration.GetSection(SwitchBotOptions.SectionName));
         services.Configure<FabricOptions>(configuration.GetSection(FabricOptions.SectionName));
         services.Configure<LineOptions>(configuration.GetSection(LineOptions.SectionName));
@@ -71,6 +71,14 @@ public static class ServiceCollectionExtensions
         // provider itself returns null out of season or when the source is down, so the
         // rest of the app never has to know whether the figure was available.
         services.AddHttpClient<IWeatherAdvisoryProvider, TokyoWeatherAdvisoryProvider>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+
+        // 気象庁 emergency information (特別警報・土砂災害警戒情報・線状降水帯・地震).
+        // Also credential-free, and also written to fail quietly: an empty list means the
+        // watch service simply has nothing extra to say this cycle.
+        services.AddHttpClient<IDisasterAdvisoryProvider, JmaDisasterAdvisoryProvider>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(10);
         });
@@ -157,14 +165,32 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDeviceProvider, DataSourceAwareDeviceProvider>();
 
         // --- AI router -------------------------------------------------------
-        var orca = configuration.GetSection(OrcaRouterOptions.SectionName).Get<OrcaRouterOptions>() ?? new OrcaRouterOptions();
+        // Azure AI Foundry model router: one deployment that picks the underlying model
+        // per prompt, so no call site pins a model any more. The chosen model comes back
+        // on the response and is recorded, so the routing decision stays auditable.
+        var router = configuration.GetSection(AzureModelRouterOptions.SectionName).Get<AzureModelRouterOptions>()
+                     ?? new AzureModelRouterOptions();
 
-        if (orca.IsConfigured)
+        if (router.IsConfigured)
         {
-            services.AddHttpClient<IAiRouterClient, OrcaRouterClient>(client =>
+            if (router.UseEntraId)
             {
-                client.BaseAddress = new Uri(orca.BaseUrl.TrimEnd('/') + "/");
-                client.Timeout = TimeSpan.FromSeconds(orca.TimeoutSeconds);
+                // Deliberately the same credential the Fabric block would register, and
+                // registered through the same TryAdd, so enabling passwordless auth here
+                // cannot quietly downgrade Fabric Data Agent auth: that path requires a
+                // real service principal and managed identities are unsupported there.
+                var fabricForCredential = configuration.GetSection(FabricOptions.SectionName).Get<FabricOptions>()
+                                          ?? new FabricOptions();
+                services.TryAddSingleton<TokenCredential>(CreateFabricTokenCredential(fabricForCredential));
+            }
+
+            services.AddHttpClient<IAiRouterClient, AzureModelRouterClient>(client =>
+            {
+                client.BaseAddress = new Uri(router.BuildBaseAddress());
+
+                // The per-call budget is enforced by the client (a LINE reply cannot wait
+                // as long as a dashboard can); this is only the outer safety net.
+                client.Timeout = TimeSpan.FromSeconds(router.TimeoutSeconds + 5);
             });
         }
         else
@@ -322,12 +348,19 @@ public static class ServiceCollectionExtensions
 
             // Deliberately not the shared TokenCredential: see FabricConsoleSyncCredential.
             services.TryAddSingleton(new FabricConsoleSyncCredential(new DefaultAzureCredential()));
-            services.AddScoped<IFabricConsoleSync, FabricSqlConsoleSync>();
+            services.AddScoped<IFabricConsoleSync>(sp => sp.GetRequiredService<FabricSqlConsoleSync>());
         }
         else
         {
+            // Still needed by ConsoleQuestionService below, which only reads the app
+            // database through BuildSnapshotAsync and never opens the Fabric SQL
+            // connection, so it works whether or not a Fabric target is configured.
+            services.TryAddSingleton(new FabricConsoleSyncCredential(new DefaultAzureCredential()));
             services.AddScoped<IFabricConsoleSync, MockFabricConsoleSync>();
         }
+
+        services.AddScoped<FabricSqlConsoleSync>();
+        services.AddScoped<IConsoleQuestionService, ConsoleQuestionService>();
 
         services.AddScoped<ILocalDataQuestionService>(sp =>
             new LocalDataQuestionService(sp.GetRequiredService<IAppDbContext>(), sp.GetRequiredService<TimeProvider>()));

@@ -35,7 +35,7 @@
 - 家電のリモート操作もチャットからできるが、
 - **AIには絶対にすべてを任せない** — 安全な家電のみ、確信度が高い時だけ、しかも操作ログは成功・失敗・拒否のすべてを監査記録する
 
-という設計を採っています。デバイス連携（SwitchBot）・AIルーティング（OrcaRouter）・データ分析（Microsoft Fabric Data Agent）・家族連絡（LINE）はすべて実連携とモックを切り替え可能で、**秘密情報が一切無くても `dotnet run` だけでフル機能のデモが動きます**。
+という設計を採っています。デバイス連携（SwitchBot）・AIルーティング（Azure Model Router）・データ分析（Microsoft Fabric Data Agent）・家族連絡（LINE）はすべて実連携とモックを切り替え可能で、**秘密情報が一切無くても `dotnet run` だけでフル機能のデモが動きます**。
 
 ## アーキテクチャ概要
 
@@ -65,7 +65,7 @@ flowchart TB
     end
 
     subgraph Infra["MimamoriTai.Infrastructure"]
-        Ai["IAiRouterClient\nOrcaRouterClient / MockAiRouterClient"]
+        Ai["IAiRouterClient\nAzureModelRouterClient / MockAiRouterClient"]
         Device["IDeviceProvider\nSwitchBotDeviceProvider / MockDeviceProvider"]
         Fabric["IFabricDataAgentClient\nFabricDataAgentMcpClient / Mock"]
         Pub["IEventStreamPublisher\nIPlugMiniReadingStreamPublisher"]
@@ -163,25 +163,25 @@ Fabric への書き込みは**すべてアプリ側からの push** です。Fab
 - **安全な家電操作ガードレール**: 後述の「安全設計」を参照。
 - **家族共有フィード**: `FamilyMessage` としてLINE/Webでのやり取りを時系列表示。
 - **使用電力量の可視化**: Plug Mini の実電力から、機器詳細で**今日・昨日・過去1週間・過去1カ月**の消費電力量と日次グラフ、さらに「いつもと比べて今日はどうか」の**遷移**を表示（`PowerUsageService`）。SwitchBot API の `weight` フィールド（コード上は `DailyEnergyWh`）は公式ドキュメントの記述が矛盾していますが、実機検証の結果**その瞬間の実電力（W）**と判明したため、**時間で積分**して Wh を求めています（1サンプルが代表できる時間は10分を上限。本番で491分の欠測を観測しており、上限がないと停電中の消費をでっち上げてしまうため）。なお `ApproxWatts`（電圧×電流）は**皮相電力**で、実測では力率0.009＝実電力の100倍という値になったため、活動判定にも電力量計算にも使っていません。
-- **AIルーティング可観測性**: OrcaRouterが解決したモデル名をレスポンスヘッダーから取得し `AiRequestLog` に記録、ダッシュボードに表示。
+- **AIルーティング可観測性**: Azure Model Router が実際に選んだモデル名をレスポンスの `model` フィールドから取得し `AiRequestLog` に記録、ダッシュボードに表示。
 - **データQ&A**: Microsoft Fabric Data Agent が未設定の場合、`LocalDataQuestionService` がアプリDBから直接キーワードベースで回答。
 - **ゼロシークレットのデモデータ**: `DemoDataSeeder` が14日分の決定論的な生活データ（起床遅延・深夜活動・低活動の3パターンを注入済み）を自動投入。
 
-## AIルーティング（OrcaRouter）
+## AIルーティング（Azure Model Router）
 
-LLM 呼び出しは [OrcaRouter](https://www.orcarouter.ai/) に集約しています。OpenAI 互換のため `BaseUrl` と `Bearer` を差し替えるだけでよく、1つのクライアント実装（`OrcaRouterClient`）から複数プロバイダのモデルを使い分けられます。既定は名前付きルーターの `orcarouter/auto` です。
+LLM 呼び出しは [Azure AI Foundry の Model Router](https://learn.microsoft.com/azure/ai-foundry/openai/how-to/model-router) に集約しています。`model-router` という**1つのデプロイ**を呼ぶだけで、リクエストごとに最適なモデルへ自動で振り分けられます。呼び方は Chat Completions API と完全に同一で、基盤モデルを個別にデプロイする必要もありません。
 
-方針は **「基本は自動に任せ、締切のある経路と JSON を要求する経路だけ固定する」**。
+方針は **「モデル選択はルーターに任せ、こちらは締切だけを宣言する」**。
 
-| 経路 | `purpose` | 解決先 | 理由 |
+| 経路 | `purpose` | 予算 | 理由 |
 | --- | --- | --- | --- |
-| 意図解析 | `intent` | 固定モデル | `response_format: json_object` に非対応のモデルへ解決された回だけ壊れるため |
-| LINE Webhook | `summary-fast` | 固定の速いモデル | 応答に締切がある（`auto` は 5.6〜51 秒と分散が大きい） |
-| Web UI / API | `summary` | `orcarouter/auto` | 締切が無いので自動ルーティングの利点をそのまま活かす |
+| 意図解析 | `intent` | 通常（30秒） | `response_format: json_object` を要求。ルーターは JSON 対応モデルへ解決する |
+| LINE Webhook | `summary-fast` | 短縮（10秒） | 応答に締切がある。ルーターが推論モデルを選ぶと数十秒かかりうるため |
+| Web UI / API | `summary` | 通常（30秒） | 締切が無いので自動ルーティングの利点をそのまま活かす |
 
-`-fast` はチャネル名ではなく**「締切がある呼び出し」を表す接尾辞**で、呼ぶ側が「自分は待てない」と宣言する形にしています。あわせて `extra_body.models` にフォールバックチェーン（最大5件）を渡し、**429 と 5xx のみ再試行**します（4xx はこちらの投げ方の問題なので再試行しません）。
+`-fast` はチャネル名ではなく**「締切がある呼び出し」を表す接尾辞**で、呼ぶ側が「自分は待てない」と宣言する形にしています。以前はここで速いモデルをピン留めしていましたが、モデル選択がルーターの役割になったため、**接尾辞の意味を「短いタイムアウト予算」に置き換えました**。再試行は **429 と 5xx のみ**（4xx はこちらの投げ方の問題なので再試行しません）。
 
-応答ヘッダの `X-Orca-Router` / `X-Orca-Resolved-Model` から**実際に応答したモデル名**を取り出して `AiRequestLog` に記録し、ダッシュボードに表示します。ルーティングを任せる以上、**任せた結果が見えている必要がある**という考えです。
+レスポンスの `model` フィールドから**実際に応答したモデル名**を取り出して `AiRequestLog` に記録し、ダッシュボードに表示します。ルーティングを任せる以上、**任せた結果が見えている必要がある**という考えです。呼び出しがモデルに届く前に失敗した場合はモデル名を記録せず、コンソールでは末尾の「未応答（失敗）」としてまとめて可視化します。
 
 ## 安全設計（このプロジェクトの差別化ポイント）
 
@@ -217,7 +217,7 @@ dotnet run --project src/MimamoriTai.Web
 ```
 
 - 接続文字列 `ConnectionStrings:AppDb` が空の場合、自動的に SQLite ファイル `mimamoritai-demo.db`（アプリのベースディレクトリ配下）を使用し `EnsureCreatedAsync()` でスキーマを作成します。
-- SwitchBot / OrcaRouter / Fabric / LINE のいずれも未設定なら、すべて Mock 実装（`MockDeviceProvider` / `MockAiRouterClient` / `MockFabricDataAgentClient` / `MockLineMessagingClient`）で動作します。
+- SwitchBot / Azure Model Router / Fabric / LINE のいずれも未設定なら、すべて Mock 実装（`MockDeviceProvider` / `MockAiRouterClient` / `MockFabricDataAgentClient` / `MockLineMessagingClient`）で動作します。
 - 起動時に `DemoDataSeeder` が14日分のデモデータを自動投入するので、初回起動直後からダッシュボードが賑わいます。
 - ログイン不要で固定のデモユーザー（`ICurrentUserAccessor` の既定実装 `DevCurrentUserAccessor`）として扱われ、ダッシュボード上部の「データソース」ドロップダウンでサンプル世帯（共有デモデータ）を選択した状態で表示されます。「本番データを開始」ボタンから自分専用の本番世帯を作成できます（詳細は下記「ユーザーとデータソースの切り替え」）。
 - `Auth:Enabled` は既定で `false` です。この状態ではログイン機能自体が一切配線されず、ダッシュボードは常に匿名（「デモモード（未認証）」チップ表示）で動作します。
@@ -325,7 +325,8 @@ cd src/MimamoriTai.Web
 dotnet user-secrets init
 
 dotnet user-secrets set "ConnectionStrings:AppDb" "<your-sql-server-connection-string>"
-dotnet user-secrets set "OrcaRouter:ApiKey" "<your-orcarouter-api-key>"
+dotnet user-secrets set "AzureModelRouter:Endpoint" "<your-ai-foundry-endpoint>"
+dotnet user-secrets set "AzureModelRouter:ApiKey" "<your-ai-foundry-api-key>"
 dotnet user-secrets set "Line:ChannelAccessToken" "<your-line-channel-access-token>"
 dotnet user-secrets set "Line:ChannelSecret" "<your-line-channel-secret>"
 dotnet user-secrets set "SwitchBot:Token" "<your-switchbot-token>"
@@ -349,7 +350,7 @@ az webapp config appsettings set -g <resource-group> -n <app-name> `
 ```
 
 - 認証は **App Service のシステム割り当てマネージドID**（`DefaultAzureCredential`）で、Vault に `Key Vault Secrets User` ロールを付与します。**Key Vault へ接続するための資格情報自体が存在しません。**
-- **シークレット名は `:` を `--` に置き換えます**（Key Vault の名前にコロンを使えないため）。例: `OrcaRouter:ApiKey` → `OrcaRouter--ApiKey`。App Service のアプリ設定で使う `__` とは別の記法です。
+- **シークレット名は `:` を `--` に置き換えます**（Key Vault の名前にコロンを使えないため）。例: `AzureModelRouter:ApiKey` → `AzureModelRouter--ApiKey`。App Service のアプリ設定で使う `__` とは別の記法です。
 - `KeyVault:Uri` が空（既定）のときは Key Vault を一切参照しません。**`git clone` して `dotnet run` するだけで動く、というゼロコンフィグの前提は変わりません。**
 - **Vault へ到達できなくてもアプリは起動します。** 初回読み込みの失敗は警告として記録し、起動は継続します（シークレットが必要な機能だけが個別に無効化されます）。Vault の一時的な不通でサイト全体が落ちるのを防ぐためです。
 - Azure 環境では Vault の公開アクセスがガバナンスポリシーで閉じられるため、**App Service と Key Vault / Azure SQL は Private Endpoint で接続**しています。構成は `docs/SECURITY.md` を参照。
@@ -384,7 +385,7 @@ Fabric Eventhouse（KQL）へのリアルタイムストリーミングを有効
 MimamoriTai.slnx
 src/
   MimamoriTai.Core/            ドメインエンティティ・列挙型・抽象(Abstractions)・アプリケーションサービス
-  MimamoriTai.Infrastructure/  EF Core (AppDbContext, DemoDataSeeder)、SwitchBot/OrcaRouter/Fabric/LINE の実装とモック
+  MimamoriTai.Infrastructure/  EF Core (AppDbContext, DemoDataSeeder)、SwitchBot/Azure Model Router/Fabric/LINE の実装とモック
   MimamoriTai.Web/             Blazor ダッシュボード、API/Webhook/Simulator エンドポイント、Program.cs
 tests/
   MimamoriTai.Tests/           xUnit テスト
@@ -430,7 +431,7 @@ dotnet test
 | 統合 | 状態 | 詳細 |
 |---|---|---|
 | SwitchBot | ✅ 設定すれば実接続 | `SwitchBotDeviceProvider` はOpenAPI v1.1のレスポンス（`deviceList`/`infraredRemoteList`、機種別のstatusフィールド）を実装済み。`SwitchBot:Enabled=true`＋Token/Secretで有効化。ダッシュボードの「実機を同期」ボタン（または`POST /api/devices/sync`）でDBへ反映し、`SwitchBotPollingBackgroundService`が実機の状態変化をイベントとして記録する。詳細は `docs/SWITCHBOT_SETUP.md`。 |
-| OrcaRouter | ✅ 設定すれば実接続 | `OrcaRouter:ApiKey` が空の間は `MockAiRouterClient` が固定応答を返す。 |
+| Azure Model Router | ✅ 設定すれば実接続 | `AzureModelRouter:Endpoint` が空の間は `MockAiRouterClient` が固定応答を返す。 |
 | Microsoft Fabric Data Agent | ✅ 設定すれば実接続 | `FabricDataAgentMcpClient` が MCP（JSON-RPC 2.0 / streamable HTTP）で公開済み Data Agent に接続します。データソースは Eventhouse の KQL データベース `MimamoriEventhouse`。認証は**サービスプリンシパル**（Data Agent のクエリ認証はマネージドIDに未対応のため）。未設定・失敗・タイムアウト時は `LocalDataQuestionService` がアプリDBから回答します。詳細は `docs/FABRIC_SETUP.md`。 |
 | Microsoft Fabric Eventhouse（リアルタイム分析） | ✅ 設定すれば実接続 | `Eventhouse:Enabled=true`＋`ClusterUri`で有効化（認証はマネージドID、秘密情報不要）。`SwitchBotPollingBackgroundService`がAzure SQL保存後に同じイベントをストリーミング取り込みし、`POST /api/stream/publish`／ダッシュボードの「Fabricへ送信」ボタンで手動疎通確認も可能。`DeviceEvents` と `SwitchBotPlugReadings` の2テーブルへ、独立した publisher が別々に書きます。 |
 | Microsoft Fabric Eventstream（Event Hubs 互換エンドポイント） | ✅ 実接続（本番の主経路） | `EventStream:Enabled=true` で `アプリ → Event Hub → Eventstream → Eventhouse / Lakehouse` の経路になります。**Eventhouse への直接取り込みも同時に設定されている場合は捨てずにフォールバックとして残します**（`FallbackEventStreamPublisher`）。Eventstream 側は宛先の一時停止や容量飽和で止まりうるのに対し、直接取り込みは Eventhouse だけを見ているため、壊れる理由が違う2本を同じテーブルに向けています。フォールバックで着いた分は送信済みとして扱い（実際に到達しているため）、両方失敗したときだけ未送信のまま次周期で再試行します。経緯は `docs/ARTICLE.md` 4-2。 |

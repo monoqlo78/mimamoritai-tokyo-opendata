@@ -23,4 +23,9 @@ services:
   storage:
     enabled: false
   functions:
+    # Left off: the Fabric backend rejects the settings sync with "Functions are
+    # not supported yet" on this capacity, so the console's question box calls the
+    # watch app's own /api/console/ask instead. Flip this back on once Fabric
+    # accepts user data functions and the answer can be assembled inside Fabric.
     enabled: false
+    buildCommand: npm run build

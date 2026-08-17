@@ -82,3 +82,6 @@ desktop.ini
 
 ## Local deployment target names (public repo: real names must not be committed)
 scripts/local-env.ps1
+
+## Node（scripts/build-deck.js の pptxgenjs 用。リポジトリには入れない）
+node_modules/

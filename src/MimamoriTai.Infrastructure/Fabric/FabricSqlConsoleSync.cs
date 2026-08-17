@@ -101,15 +101,16 @@ public sealed class FabricSqlConsoleSync(
             var alerts = await WriteAlertsAsync(connection, snapshot, ct);
             var activity = await WriteActivityAsync(connection, snapshot, ct);
             var aiCalls = await WriteAiRouterCallsAsync(connection, snapshot, ct);
+            var outdoor = await WriteOutdoorReadingsAsync(connection, snapshot, ct);
 
             await LogAiRouterTotalsAsync(connection, snapshot, ct);
 
             var elapsed = ElapsedMs(started);
             logger.LogInformation(
-                "Fabric console sync wrote {Households} household(s), {Alerts} alert(s), {Activity} activity bucket(s) and {AiCalls} AI router group(s) in {Elapsed}ms.",
-                households, alerts, activity, aiCalls, elapsed);
+                "Fabric console sync wrote {Households} household(s), {Alerts} alert(s), {Activity} activity bucket(s), {AiCalls} AI router group(s) and {Outdoor} outdoor hour(s) in {Elapsed}ms.",
+                households, alerts, activity, aiCalls, outdoor, elapsed);
 
-            return new FabricConsoleSyncResult(true, households, alerts, activity, aiCalls, elapsed, null);
+            return new FabricConsoleSyncResult(true, households, alerts, activity, aiCalls, elapsed, null, outdoor);
         }
         catch (OperationCanceledException)
         {
@@ -227,12 +228,32 @@ public sealed class FabricSqlConsoleSync(
         long AvgDurationMs,
         DateTimeOffset LastCalledAt);
 
+    /// <summary>
+    /// One hour of public outdoor observation for one point. Every measurement is
+    /// nullable because the two sources cover different parts of the year: 気象庁
+    /// AMeDAS runs year-round while 環境省 WBGT is only published in the warm months,
+    /// so a winter row legitimately carries a temperature and no 暑さ指数.
+    /// </summary>
+    internal sealed record OutdoorRow(
+        string PointCode,
+        string AreaName,
+        DateTime BucketStart,
+        double? TemperatureC,
+        double? MinTemperatureC,
+        double? MaxTemperatureC,
+        double? HumidityPercent,
+        double? MaxWbgt,
+        int HeatLevel,
+        int ColdLevel,
+        int SampleCount);
+
     internal sealed record Snapshot(
         DateTimeOffset CapturedAt,
         IReadOnlyList<HouseholdRow> Households,
         IReadOnlyList<AlertRow> Alerts,
         IReadOnlyList<ActivityRow> Activity,
-        IReadOnlyList<AiCallRow> AiCalls);
+        IReadOnlyList<AiCallRow> AiCalls,
+        IReadOnlyList<OutdoorRow> Outdoor);
 
     internal async Task<Snapshot> BuildSnapshotAsync(CancellationToken ct)
     {
@@ -427,7 +448,7 @@ public sealed class FabricSqlConsoleSync(
             deviceNames.ToDictionary(kv => kv.Key, kv => (kv.Value.Name, kv.Value.DeviceType.ToString())));
 
         // No time window on purpose: callCount is an all-time total, so the console's
-        // "OrcaRouter calls" number only ever moves forward.
+        // "Model Router calls" number only ever moves forward.
         var aiCalls = (await db.AiRequestLogs
             .GroupBy(l => new { l.Purpose, l.Router, l.ResolvedModel })
             .Select(g => new
@@ -452,7 +473,86 @@ public sealed class FabricSqlConsoleSync(
                 g.LastCalledAt))
             .ToList();
 
-        return new Snapshot(now, householdRows, alertRows, activityRows, aiCalls);
+        return new Snapshot(now, householdRows, alertRows, activityRows, aiCalls, await OutdoorAsync(activitySince, ct));
+    }
+
+    /// <summary>
+    /// Rolls the raw outdoor observations up to (point, UTC hour).
+    ///
+    /// Temperature is averaged because that is what "the hour was like" means, but
+    /// WBGT is taken at its maximum: the figure a family is warned on is the worst
+    /// moment in the hour, and averaging it would quietly file the peak away. The
+    /// bands follow the same rule for the same reason.
+    ///
+    /// Averages skip nulls rather than treating them as zero -- an unobserved hour
+    /// must reach the console as a gap, never as 0 °C.
+    /// </summary>
+    private async Task<IReadOnlyList<OutdoorRow>> OutdoorAsync(DateTimeOffset since, CancellationToken ct)
+    {
+        var readings = await db.HeatReadings
+            .Where(r => r.ObservedAtUtc >= since)
+            .Select(r => new
+            {
+                r.PointCode,
+                r.AreaName,
+                r.ObservedAtUtc,
+                r.TemperatureC,
+                r.HumidityPercent,
+                r.Wbgt,
+                r.Level,
+                r.ColdLevel,
+            })
+            .ToListAsync(ct);
+
+        return readings
+            .GroupBy(r => new
+            {
+                r.PointCode,
+                BucketStart = new DateTime(
+                    r.ObservedAtUtc.UtcDateTime.Year,
+                    r.ObservedAtUtc.UtcDateTime.Month,
+                    r.ObservedAtUtc.UtcDateTime.Day,
+                    r.ObservedAtUtc.UtcDateTime.Hour,
+                    0, 0, DateTimeKind.Utc),
+            })
+            .Select(g => new OutdoorRow(
+                g.Key.PointCode,
+                // The point can be renamed between observations; the newest wins so the
+                // console never shows a name the source has already stopped using.
+                g.OrderByDescending(r => r.ObservedAtUtc).Select(r => r.AreaName).FirstOrDefault(a => !string.IsNullOrWhiteSpace(a)) ?? string.Empty,
+                g.Key.BucketStart,
+                Mean(g.Select(r => r.TemperatureC)),
+                MinOrNull(g.Select(r => r.TemperatureC)),
+                MaxOrNull(g.Select(r => r.TemperatureC)),
+                Mean(g.Select(r => r.HumidityPercent)),
+                MaxOrNull(g.Select(r => r.Wbgt)),
+                g.Max(r => r.Level),
+                g.Max(r => r.ColdLevel),
+                g.Count()))
+            .OrderByDescending(r => r.BucketStart)
+            .ThenBy(r => r.PointCode, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>Mean of the observed values only; null when the hour observed none.</summary>
+    private static double? Mean(IEnumerable<double?> values)
+    {
+        var observed = values.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        return observed.Count == 0 ? null : Math.Round(observed.Average(), 2, MidpointRounding.AwayFromZero);
+    }
+
+    /// <summary>Smallest observed value, or null when the hour observed none.</summary>
+    private static double? MinOrNull(IEnumerable<double?> values)
+    {
+        var observed = values.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        return observed.Count == 0 ? null : observed.Min();
+    }
+
+    /// <summary>Largest observed value, or null when the hour observed none.</summary>
+    private static double? MaxOrNull(IEnumerable<double?> values)
+    {
+        var observed = values.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        return observed.Count == 0 ? null : observed.Max();
     }
 
     /// <summary>
@@ -590,6 +690,14 @@ public sealed class FabricSqlConsoleSync(
 
     private static string Num(long value) => value.ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Renders an optional measurement for a text column. Null becomes an empty string,
+    /// never "0": the console draws a gap for the former and a real reading for the
+    /// latter, and 0 °C is a perfectly ordinary winter observation.
+    /// </summary>
+    private static string Measure(double? value) =>
+        value.HasValue ? value.Value.ToString("0.##", CultureInfo.InvariantCulture) : string.Empty;
+
     private static async Task<int> ExecuteAsync(
         SqlConnection connection,
         string sql,
@@ -625,6 +733,25 @@ public sealed class FabricSqlConsoleSync(
 
         var found = await command.ExecuteScalarAsync(ct);
         return found is int count && count == columns.Length;
+    }
+
+    /// <summary>
+    /// Whether the Rayfin model behind a table has reached this workspace yet.
+    /// A missing table is a deployment state, not an error, so it is probed rather
+    /// than discovered by catching an exception mid-write.
+    /// </summary>
+    private static async Task<bool> HasTableAsync(SqlConnection connection, string table, CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @table;
+            """;
+        command.CommandTimeout = 60;
+        command.Parameters.AddWithValue("@table", table);
+
+        var found = await command.ExecuteScalarAsync(ct);
+        return found is int count && count > 0;
     }
 
     private static Task<bool> HasPowerColumnsAsync(SqlConnection connection, CancellationToken ct) =>
@@ -939,6 +1066,66 @@ public sealed class FabricSqlConsoleSync(
         return written;
     }
 
+    /// <summary>
+    /// Writes the outdoor rollup, but only once the Rayfin model has actually been
+    /// applied to the workspace. The table is newer than the deployment, and losing
+    /// every other operational figure to an "invalid object name" would be a far
+    /// worse failure than simply having no weather yet.
+    /// </summary>
+    private async Task<int> WriteOutdoorReadingsAsync(SqlConnection connection, Snapshot snapshot, CancellationToken ct)
+    {
+        if (!await HasTableAsync(connection, "OutdoorReadings", ct))
+        {
+            logger.LogWarning(
+                "dbo.OutdoorReadings does not exist; skipping the outdoor observations. Run `npm run rayfin:db` in fabric-app.");
+            return 0;
+        }
+
+        const string Sql = """
+            MERGE dbo.OutdoorReadings AS t
+            USING (SELECT @id AS id) AS s ON t.id = s.id
+            WHEN MATCHED THEN UPDATE SET
+                pointCode = @pointCode, areaName = @areaName, bucketStart = @bucketStart,
+                temperatureC = @temperatureC, minTemperatureC = @minTemperatureC,
+                maxTemperatureC = @maxTemperatureC, humidityPercent = @humidityPercent,
+                maxWbgt = @maxWbgt, heatLevel = @heatLevel, coldLevel = @coldLevel,
+                sampleCount = @sampleCount
+            WHEN NOT MATCHED THEN INSERT
+                (id, pointCode, areaName, bucketStart, temperatureC, minTemperatureC,
+                 maxTemperatureC, humidityPercent, maxWbgt, heatLevel, coldLevel, sampleCount)
+            VALUES
+                (@id, @pointCode, @areaName, @bucketStart, @temperatureC, @minTemperatureC,
+                 @maxTemperatureC, @humidityPercent, @maxWbgt, @heatLevel, @coldLevel, @sampleCount);
+            """;
+
+        var written = 0;
+
+        foreach (var r in snapshot.Outdoor)
+        {
+            var key = $"outdoor-reading:{r.PointCode}|{r.BucketStart:O}";
+
+            await ExecuteAsync(connection, Sql, p =>
+            {
+                p.AddWithValue("@id", DeterministicId(key));
+                p.AddWithValue("@pointCode", Text(r.PointCode));
+                p.AddWithValue("@areaName", Text(r.AreaName));
+                p.AddWithValue("@bucketStart", r.BucketStart);
+                p.AddWithValue("@temperatureC", Measure(r.TemperatureC));
+                p.AddWithValue("@minTemperatureC", Measure(r.MinTemperatureC));
+                p.AddWithValue("@maxTemperatureC", Measure(r.MaxTemperatureC));
+                p.AddWithValue("@humidityPercent", Measure(r.HumidityPercent));
+                p.AddWithValue("@maxWbgt", Measure(r.MaxWbgt));
+                p.AddWithValue("@heatLevel", Num(r.HeatLevel));
+                p.AddWithValue("@coldLevel", Num(r.ColdLevel));
+                p.AddWithValue("@sampleCount", Num(r.SampleCount));
+            }, ct);
+
+            written++;
+        }
+
+        return written;
+    }
+
     // The console shows one number above the model chart: the sum of callCount
     // over every row whose router is not the offline stub. When that number looks
     // wrong there are three places it can go wrong -- the source table, this
@@ -983,8 +1170,8 @@ public sealed class FabricSqlConsoleSync(
             var fabricViaRouter = reader.IsDBNull(2) ? 0L : reader.GetInt64(2);
 
             logger.LogInformation(
-                "Fabric AI router rollup: source {SourceRows} row(s) / {SourceTotal} call(s) / {SourceViaRouter} via OrcaRouter; " +
-                "Fabric now holds {FabricRows} row(s) / {FabricTotal} call(s) / {FabricViaRouter} via OrcaRouter.",
+                "Fabric AI router rollup: source {SourceRows} row(s) / {SourceTotal} call(s) / {SourceViaRouter} via Model Router; " +
+                "Fabric now holds {FabricRows} row(s) / {FabricTotal} call(s) / {FabricViaRouter} via Model Router.",
                 sourceRows, sourceTotal, sourceViaRouter, fabricRows, fabricTotal, fabricViaRouter);
 
             if (fabricViaRouter != sourceViaRouter)

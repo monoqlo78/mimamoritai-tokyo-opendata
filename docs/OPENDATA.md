@@ -1,4 +1,4 @@
-﻿# 使用しているオープンデータ
+# 使用しているオープンデータ
 
 「見守り隊 / CareRoute AI」は、カメラを使わずに離れて暮らす家族を見守ります。
 家の中のセンサーだけでは「暑いのに冷房が止まっている」ことに気づけません。
@@ -12,6 +12,30 @@
 | 1 | 暑さ指数（WBGT）予測値 | 環境省 熱中症予防情報サイト | CSV / 1日数回・3時間刻み | `https://www.wbgt.env.go.jp/prev15WG/dl/yohou_tokyo.csv` | 出典明記で商用利用可 | **熱中症ガードの判定軸**。東京（地点 44132）の直近の暑さ指数を読み、28以上（厳重警戒）で冷房の稼働状況と突き合わせる |
 | 2 | アメダス実況（気温・湿度） | 気象庁 | JSON / 10分ごと | `https://www.jma.go.jp/bosai/amedas/data/latest_time.txt` → `https://www.jma.go.jp/bosai/amedas/data/map/{yyyyMMddHHmmss}.json`（観測所一覧は `https://www.jma.go.jp/bosai/amedas/const/amedastable.json`） | 出典明記で商用利用可 | 通知文の裏付け。「暑さ指数 29.4／気温 33.1℃ 湿度 62%」と**人が納得できる数字**を添える。観測所一覧は**世帯ごとの観測所の切り替え**にも使う（設定画面の地域選択・GPSから最寄り観測所を特定）。実況マップは全国1ファイルのため、世帯ごとに観測所を変えても追加のリクエストは発生しない |
 | 3 | 天気予報（東京 130000） | 気象庁 | JSON / 1日3回 | `https://www.jma.go.jp/bosai/forecast/data/forecast/130000.json` | 出典明記で商用利用可 | **ヒートショック予報**。翌朝の予想最低気温を読み、冷え込む朝の**前夜のうちに**「脱衣所を暖めておきましょう」と伝える |
+| 4 | 気象警報・注意報（東京 130000） | 気象庁 | JSON / 随時 | `https://www.jma.go.jp/bosai/warning/data/warning/130000.json` | 出典明記で商用利用可 | **特別警報のみ**を読む（コード 32/33/35/36/37/38、`status=解除` は除外）。通常の警報・注意報は1日に何度も変わるため通知しない |
+| 5 | 防災情報XML「随時」フィード | 気象庁 | Atom XML / 随時 | `https://www.data.jma.go.jp/developer/xml/feed/extra.xml` | 出典明記で商用利用可 | **土砂災害警戒情報**と**顕著な大雨に関する気象情報（線状降水帯）**。上のJSONには含まれない別プロダクトのため、この経路でのみ取得できる。エントリのID末尾（`_130000.xml`）で東京都分に絞る |
+| 6 | 地震情報一覧 | 気象庁 | JSON / 随時 | `https://www.jma.go.jp/bosai/quake/data/list.json` | 出典明記で商用利用可 | **震度5弱以上**の地震。全国配信なので `int[]` の都道府県コード `13` を引き当て、**東京が実際に何を観測したか**で判定する（震源の震度ではない） |
+
+#### 防災情報を「速報の焼き直し」にしないための設計
+
+緊急速報メールは全員に届く。だからこの通知は**警報そのものを伝えない**。伝えるのは2文目 ——
+
+> 東京都に土砂災害警戒情報が出ています。お母さんのお宅では07:15に家電の利用がありました。
+
+家電が動いた時刻は、このアプリしか持っていない。警報の再送は無価値だが、**警報と安否を1通に束ねること**には価値がある。
+
+そのために次を守っている。
+
+- **絞る**：注意報・警報は送らない。地震は東京の震度が5弱以上のときだけ。九州の震度3を東京の家族に送れば、通知はミュートされ、熱中症アラートも一緒に沈黙する
+- **1件だけ**：大雨特別警報と土砂災害警戒情報は同時に出る。重大な方を1通だけ送る
+- **重複させない**：警報は数時間出たままになる。発表時刻＋種別＋地域をキーに、1回だけ送る
+- **捏造しない**：家電の記録がなければ「まだ確認できていません」と書く。**沈黙を「無事」にも「異常」にも丸めない**
+
+実装は
+[`src/MimamoriTai.Infrastructure/OpenData/JmaDisasterAdvisoryProvider.cs`](../src/MimamoriTai.Infrastructure/OpenData/JmaDisasterAdvisoryProvider.cs)、
+通知は
+[`WatchAlertService.TrySendDisasterNoticeAsync`](../src/MimamoriTai.Core/Application/WatchAlertService.cs) です。
+
 
 取得・解析の実装は
 [`src/MimamoriTai.Infrastructure/OpenData/TokyoHeatAdvisoryProvider.cs`](../src/MimamoriTai.Infrastructure/OpenData/TokyoHeatAdvisoryProvider.cs)、
@@ -84,18 +108,18 @@
 
 | # | データ名 | 提供元 | 取得URL | ライセンス | 分かったこと |
 |---|---|---|---|---|---|
-| 4 | 熱中症による救急搬送 発生場所別（令和3年） | 東京都福祉局 | `https://www.opendata.metro.tokyo.lg.jp/fukushihoken/R3/02_1.csv` | CC BY 4.0 | **住居施設等 423人（56.6%）** / 道路・屋外 207人（27.7%）。屋外対策だけでは半分以上を取りこぼす |
-| 5 | 65歳以上の初診時程度（令和3年） | 東京都福祉局 | `https://www.opendata.metro.tokyo.lg.jp/fukushihoken/R3/02_2.csv` | CC BY 4.0 | 中等症48.9% / 重症5.9% / 重篤1.7%。**半数以上が入院を要する** |
-| 6 | 熱中症搬送 時間帯別（令和3年） | 東京都福祉局 | `https://www.opendata.metro.tokyo.lg.jp/fukushihoken/R3/02_3.csv` | CC BY 4.0 | 65歳以上は**10〜14時に集中**。日中ひとりで在宅している時間と重なる |
-| 7 | 熱中症搬送人員の過去5年推移 | 東京消防庁 | `https://www.opendata.metro.tokyo.lg.jp/shoubou/2024/1-3-4kako5nenkannonettyuusyounosuii.csv` | CC BY 4.0 | 2019:6,094 → 2023:**7,517人**。減っていない |
-| 8 | 国勢調査 区市町村別世帯数 | 東京都総務局統計部 | `https://www.toukei.metro.tokyo.lg.jp/kokutyo/2020/kt20tv0005.csv` | CC BY 4.0 | 単身世帯の規模感。見守り対象となりうる世帯数の把握 |
+| 7 | 熱中症による救急搬送 発生場所別（令和3年） | 東京都福祉局 | `https://www.opendata.metro.tokyo.lg.jp/fukushihoken/R3/02_1.csv` | CC BY 4.0 | **住居施設等 423人（56.6%）** / 道路・屋外 207人（27.7%）。屋外対策だけでは半分以上を取りこぼす |
+| 8 | 65歳以上の初診時程度（令和3年） | 東京都福祉局 | `https://www.opendata.metro.tokyo.lg.jp/fukushihoken/R3/02_2.csv` | CC BY 4.0 | 中等症48.9% / 重症5.9% / 重篤1.7%。**半数以上が入院を要する** |
+| 9 | 熱中症搬送 時間帯別（令和3年） | 東京都福祉局 | `https://www.opendata.metro.tokyo.lg.jp/fukushihoken/R3/02_3.csv` | CC BY 4.0 | 65歳以上は**10〜14時に集中**。日中ひとりで在宅している時間と重なる |
+| 10 | 熱中症搬送人員の過去5年推移 | 東京消防庁 | `https://www.opendata.metro.tokyo.lg.jp/shoubou/2024/1-3-4kako5nenkannonettyuusyounosuii.csv` | CC BY 4.0 | 2019:6,094 → 2023:**7,517人**。減っていない |
+| 11 | 国勢調査 区市町村別世帯数 | 東京都総務局統計部 | `https://www.toukei.metro.tokyo.lg.jp/kokutyo/2020/kt20tv0005.csv` | CC BY 4.0 | 単身世帯の規模感。見守り対象となりうる世帯数の把握 |
 
 ## 3. 今後つなぎ込む予定のオープンデータ
 
 | # | データ名 | 提供元 | 取得URL | 想定用途 |
 |---|---|---|---|---|
-| 9 | 地域包括支援センター一覧（中野区） | 中野区 | `https://www2.wagmap.jp/nakanodatamap/nakanodatamap/opendatafile/map_21/CSV/opendata_5000407.csv` | リスク「中」以上のとき、**最寄りの公的相談窓口**を家族に提示する |
-| 10 | 地域包括支援センター一覧（昭島市） | 昭島市 | `https://www.opendata.metro.tokyo.lg.jp/akishima/132071_center.csv` | 同上（担当地区つき。※Shift-JIS） |
+| 12 | 地域包括支援センター一覧（中野区） | 中野区 | `https://www2.wagmap.jp/nakanodatamap/nakanodatamap/opendatafile/map_21/CSV/opendata_5000407.csv` | リスク「中」以上のとき、**最寄りの公的相談窓口**を家族に提示する |
+| 13 | 地域包括支援センター一覧（昭島市） | 昭島市 | `https://www.opendata.metro.tokyo.lg.jp/akishima/132071_center.csv` | 同上（担当地区つき。※Shift-JIS） |
 
 地域包括支援センターは**東京都全体を束ねた1本のデータが存在せず**、区市町村ごとに
 公開形式・名称が異なります（世田谷区「高齢者あんしん相談センター」、練馬区「高齢者地域包括支援センター」、

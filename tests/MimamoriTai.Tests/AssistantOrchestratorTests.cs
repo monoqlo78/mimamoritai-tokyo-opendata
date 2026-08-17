@@ -485,7 +485,7 @@ public class AssistantSummaryTests(Xunit.Abstractions.ITestOutputHelper output)
 
             return Task.FromResult(success
                 ? new AiCompletionResult(true, summary ?? string.Empty, DisplayName, model, 12)
-                : new AiCompletionResult(false, string.Empty, DisplayName, model, 12, "OrcaRouter returned 429."));
+                : new AiCompletionResult(false, string.Empty, DisplayName, model, 12, "Azure Model Router returned 429."));
         }
     }
 
@@ -548,7 +548,7 @@ public class AssistantSummaryTests(Xunit.Abstractions.ITestOutputHelper output)
             " | ", logs.Select(l => $"{l.Purpose}/{l.Success}/{l.Error ?? "-"}")));
 
         var failed = Assert.Single(logs, l => !l.Success);
-        Assert.Equal("OrcaRouter returned 429.", failed.Error);
+        Assert.Equal("Azure Model Router returned 429.", failed.Error);
         Assert.All(logs.Where(l => l.Success), l => Assert.Null(l.Error));
 
         output.WriteLine("router-down reply: " + response.Reply);
@@ -943,8 +943,8 @@ public class FabricScopeTests
 
 /// <summary>
 /// LINE cancels an event after 8 seconds; the web UI has no such limit and shows the
-/// resolved model name, which is the visible evidence that OrcaRouter routed the
-/// request. So the deadline-bound model pin is applied per entry point, not globally.
+/// resolved model name, which is the visible evidence that the model router routed the
+/// request. So the deadline-bound budget is applied per entry point, not globally.
 /// </summary>
 public class SummaryRoutingTests
 {
@@ -989,7 +989,7 @@ public class SummaryRoutingTests
         var purposes = await PurposesForAsync(CommandSource.Line);
 
         Assert.Contains("summary-fast", purposes);
-        Assert.EndsWith(OrcaRouterOptions.FastSuffix, "summary-fast", StringComparison.Ordinal);
+        Assert.EndsWith(AzureModelRouterOptions.FastSuffix, "summary-fast", StringComparison.Ordinal);
     }
 
     [Theory]

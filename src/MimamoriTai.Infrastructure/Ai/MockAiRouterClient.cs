@@ -4,7 +4,7 @@ using MimamoriTai.Core.Abstractions;
 namespace MimamoriTai.Infrastructure.Ai;
 
 /// <summary>
-/// DEMO ONLY. Deterministic rule-based stand-in for OrcaRouter so the whole product
+/// DEMO ONLY. Deterministic rule-based stand-in for Azure Model Router so the whole product
 /// stays demoable with no API key. It performs simple Japanese keyword matching and
 /// emits exactly the same JSON contract the real model is asked to produce.
 /// </summary>
@@ -26,8 +26,8 @@ public sealed class MockAiRouterClient : IAiRouterClient
 
         // The purpose can carry a routing suffix (e.g. "summary-fast" for the LINE
         // deadline); the intent behind it is unchanged, so match on the base name.
-        var basePurpose = purpose.EndsWith(OrcaRouterOptions.FastSuffix, StringComparison.Ordinal)
-            ? purpose[..^OrcaRouterOptions.FastSuffix.Length]
+        var basePurpose = purpose.EndsWith(AzureModelRouterOptions.FastSuffix, StringComparison.Ordinal)
+            ? purpose[..^AzureModelRouterOptions.FastSuffix.Length]
             : purpose;
 
         var content = basePurpose switch

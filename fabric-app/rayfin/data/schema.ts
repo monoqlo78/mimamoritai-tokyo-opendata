@@ -2,6 +2,7 @@ import { ActivityBucket } from './ActivityBucket.js';
 import { AiRouterCall } from './AiRouterCall.js';
 import { AlertRecord } from './AlertRecord.js';
 import { HouseholdSnapshot } from './HouseholdSnapshot.js';
+import { OutdoorReading } from './OutdoorReading.js';
 
 /**
  * Every entity must be listed here: Rayfin derives the SQL database schema and
@@ -13,6 +14,7 @@ export type MimamoriAdminSchema = {
   AlertRecord: AlertRecord;
   ActivityBucket: ActivityBucket;
   AiRouterCall: AiRouterCall;
+  OutdoorReading: OutdoorReading;
 };
 
-export const schema = [HouseholdSnapshot, AlertRecord, ActivityBucket, AiRouterCall];
+export const schema = [HouseholdSnapshot, AlertRecord, ActivityBucket, AiRouterCall, OutdoorReading];

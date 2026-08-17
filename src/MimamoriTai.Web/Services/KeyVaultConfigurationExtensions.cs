@@ -15,8 +15,8 @@ namespace MimamoriTai.Web.Services;
 /// path works in both places without a bootstrap secret.
 ///
 /// Secret names use the standard double-dash convention that the Key Vault configuration
-/// provider maps onto the configuration hierarchy: <c>OrcaRouter--ApiKey</c> becomes
-/// <c>OrcaRouter:ApiKey</c>. Because this provider is added last it wins over
+/// provider maps onto the configuration hierarchy: <c>AzureModelRouter--ApiKey</c> becomes
+/// <c>AzureModelRouter:ApiKey</c>. Because this provider is added last it wins over
 /// appsettings.json, and because it is registered only when <c>KeyVault:Uri</c> is set,
 /// the app still starts with zero configuration (all-mock demo mode) when it is absent.
 ///

@@ -169,11 +169,12 @@ ORDER BY BucketStart;
 -- AI router rollup. Counts only: AiRequestLogs stores no prompt or completion
 -- text, and the household id is deliberately dropped here as well.
 --
--- The grain is what makes the routing visible: `Router` is the X-Orca-Router
--- response header, so "auto" rows are the ones OrcaRouter itself routed, while
--- "OrcaRouter" rows are the calls where we pinned a model on purpose (JSON and
--- deadline-bound paths). Comparing their AvgDurationMs is the evidence behind
--- that decision.
+-- The grain is what makes the routing visible: `Router` names the client that
+-- served the call ("Azure Model Router" or "MockAiRouter"), and `ResolvedModel`
+-- is the model the router actually picked, taken from the response `model`
+-- field. Calls that failed before reaching a model carry an empty
+-- ResolvedModel, which is what the console renders as the trailing "unanswered"
+-- bar instead of quietly dropping them.
 SELECT
     l.Purpose        AS Purpose,
     l.Router         AS Router,

@@ -25,7 +25,7 @@ public sealed class FakeTokenCredential(string token = "fake-token") : TokenCred
     }
 }
 
-/// <summary>Captures the outgoing request (URL + body) and returns a canned response, mirroring the stub pattern used for SwitchBot/OrcaRouter tests.</summary>
+/// <summary>Captures the outgoing request (URL + body) and returns a canned response, mirroring the stub pattern used for SwitchBot/Model Router tests.</summary>
 public sealed class StubHttpMessageHandler(HttpStatusCode statusCode = HttpStatusCode.OK) : HttpMessageHandler
 {
     public HttpRequestMessage? LastRequest { get; private set; }

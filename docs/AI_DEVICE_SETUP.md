@@ -1,4 +1,4 @@
-# AI・デバイス連携セットアップ（OrcaRouter / SwitchBot / Fabric）
+﻿# AI・デバイス連携セットアップ（Azure Model Router / SwitchBot / Fabric）
 
 このドキュメントは、見守り隊の AI アシスタント連携を **Mock から実接続へ切り替えるために
 ユーザーが手作業で用意する必要があるもの** を一覧化したものです。
@@ -24,33 +24,39 @@ dotnet user-secrets init   # 初回のみ（csproj に UserSecretsId は設定�
 
 ---
 
-## 1. OrcaRouter（LLM）
+## 1. Azure Model Router（LLM）
 
 ### 必要なもの
 
 | 設定キー | 必須 | 説明 |
 |---|---|---|
-| `OrcaRouter:ApiKey` | **必須** | これが空だと Mock にフォールバックします |
-| `OrcaRouter:BaseUrl` | 任意 | 既定 `https://api.orcarouter.ai/v1`（検証済み） |
-| `OrcaRouter:Model` | 任意 | 既定 `orcarouter/auto` |
-| `OrcaRouter:JsonModel` | 任意 | 既定 `openai/gpt-4.1-mini`（後述の理由で重要） |
-| `OrcaRouter:FastModel` | 任意 | 既定 `openai/gpt-4.1-mini`。締切のある経路（LINE webhook）専用。Web UI / API は `Model` の自動ルーティングのまま（6-4） |
-| `OrcaRouter:FallbackModels` | 任意 | 主モデルが落ちた時の代替（最大5件） |
+| `AzureModelRouter:Endpoint` | **必須** | Azure AI Foundry リソースのエンドポイント。空だと Mock にフォールバックします |
+| `AzureModelRouter:ApiKey` | 条件付き必須 | `UseEntraId` が false のとき必須 |
+| `AzureModelRouter:UseEntraId` | 任意 | `true` にするとキーの代わりに Microsoft Entra ID で認証します（本番の既定運用） |
+| `AzureModelRouter:Deployment` | 任意 | 既定 `model-router`。Foundry 上のデプロイ名 |
+| `AzureModelRouter:ApiVersion` | 任意 | 既定 `2024-10-21`。空にすると v1 形式のエンドポイントを使います |
+| `AzureModelRouter:TimeoutSeconds` | 任意 | 既定 30。通常の呼び出しの予算 |
+| `AzureModelRouter:FastTimeoutSeconds` | 任意 | 既定 10。締切のある経路（`-fast`）の予算（6-4） |
 
 ### 取得手順
 
-1. <https://www.orcarouter.ai/console/get-started> にサインアップする。
-2. コンソールで API キーを発行する。
-3. 以下を実行する（`<key>` を実際の値に置き換え）。
+1. [Azure AI Foundry](https://ai.azure.com/) でプロジェクトを開く。
+2. **モデル カタログ**から `model-router` を選び、デプロイする。基盤モデルを個別に
+   デプロイする必要はありません（ルーターが裏で選びます）。
+3. デプロイのエンドポイントとキーをコピーし、以下を実行する。
 
 ```powershell
 cd src\MimamoriTai.Web
-dotnet user-secrets set "OrcaRouter:ApiKey" "<key>"
+dotnet user-secrets set "AzureModelRouter:Endpoint" "<endpoint>"
+dotnet user-secrets set "AzureModelRouter:ApiKey" "<key>"
 ```
 
-4. アプリを起動し、ダッシュボードの連携状況が `OrcaRouter: Live` になることを確認する。
+4. アプリを起動し、ダッシュボードの連携状況チップが `AI 接続済み` になることを確認する。
 
-### 動作確認（キー投入後）
+キーを使わず Microsoft Entra ID で認証する場合は、`AzureModelRouter:UseEntraId` を `true` に
+し、実行 ID に Foundry リソースの **Cognitive Services User** ロールを付与してください。
+
+### 動作確認（設定投入後）
 
 ```powershell
 $body = @{ message = "今日のお母さんの様子を教えて" } | ConvertTo-Json -Compress
@@ -60,30 +66,27 @@ $r = Invoke-WebRequest -Uri "http://localhost:5302/api/assistant/message" `
 [Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray())
 ```
 
-応答 JSON の `router` が `OrcaRouter`、`resolvedModel` が実際に選ばれたモデル名
-（例 `openai/gpt-4.1-mini`）になっていれば実接続です。
+応答 JSON の `router` が `Azure Model Router`、`resolvedModel` が**ルーターが実際に選んだ
+基盤モデル名**になっていれば実接続です。
 Mock のときは `router: "MockAiRouter"` / `resolvedModel: "mock/local-rules"` になります。
 
-### なぜ `JsonModel` を分けているのか（重要）
+### モデルを固定していない理由
 
-意図解析は `response_format: {"type":"json_object"}` を使って JSON を強制しています。
-しかし **Anthropic 系モデルはこのパラメータを一切サポートしていません**
-（OrcaRouter 公式ドキュメント `advanced/structured-outputs` に明記）。
+以前は用途ごとにモデルをピン留めしていました（JSON を要求する呼び出しは JSON 対応モデルへ、
+締切のある呼び出しは速いモデルへ）。Model Router はリクエストごとに適切なモデルを
+自分で選ぶため、**アプリ側でのピン留めは廃止**し、こちらは「待てる時間」だけを
+宣言する形にしました（6-4）。
 
-既定の `orcarouter/auto` は全モデルを候補にするルーターなので、
-たまたま Anthropic に解決されると意図解析が壊れます。
-そのため **JSON を要求する呼び出しだけは `JsonModel` にピン留め** し、
-自由文の要約は `Model`（= `auto`）に任せる、という二本立てにしています。
-
-`JsonModel` を変更する場合は、`json_object` に対応したモデル
-（OpenAI / Grok / Gemini / DeepSeek 系）を指定してください。
+モデル選択がルーター任せになっても、**どのモデルが応答したかはレスポンスの `model`
+フィールドで分かる**ため、`AiRequestLog` への記録とダッシュボード表示はそのままです。
 
 ### 障害時の挙動
 
-- 429（レート制限）と 5xx は自動リトライします。`Retry-After` ヘッダーがあれば従います。
-- `FallbackModels` を設定していれば、主モデルが失敗した時に順に切り替えます。
+- 429（レート制限）と 5xx は自動リトライします。`Retry-After` ヘッダーがあれば従います
+  （`AzureModelRouter:MaxRetryDelaySeconds` で上限）。
+- 4xx（こちらの投げ方の問題）と呼び出し側のキャンセルは再試行しません。
 - 最終的に失敗しても **アプリは落ちず、日本語のメッセージを返します**。
-
+  この場合モデル名は記録せず、コンソールでは「未応答（失敗）」として可視化します。
 ---
 
 ## 2. SwitchBot（家電操作）
@@ -247,27 +250,29 @@ LLM に家電操作をさせる以上、暴走したときの被害を構造的�
 `WatchAlertService` がリスクを評価し、閾値（既定 Medium）以上なら LINE で家族に通知します。
 
 - 同一人物・同一リスクレベルの通知は **6時間クールダウン** され、連投しません。
-- 通知文は OrcaRouter が設定済みなら LLM が自然な日本語に整えます。
+- 通知文は Azure Model Router が設定済みなら LLM が自然な日本語に整えます。
   **失敗しても定型文で必ず送信** されるため、通知が LLM に依存することはありません。
 
 ---
 
 ## 6. 現在の検証状況（実キー投入後・実測）
 
-すべて実際の API を叩いた結果です。推測は含みません。
+実測した項目は「実測」、ドキュメントで確認しただけの項目は「確認」と書き分けています。推測は含みません。
 
 | 項目 | 状態 |
 |---|---|
-| OrcaRouter のベース URL / 認証方式 / エンドポイント | 公式ドキュメントと実 HTTP で **検証済み** |
-| `json_object` × Anthropic 非対応問題 | **発見・対処済み**（`JsonModel` 分離） |
-| 429 / `Retry-After` / フォールバック | **実装・テスト済み** |
-| OrcaRouter の実キーによる end-to-end 応答 | **実測済み**（`X-Orca-Router: auto` → `qwen3.7-plus` 等） |
+| Azure Model Router のエンドポイント形式 / 認証方式 | 公式ドキュメントで **確認済み**（`docs/REFERENCES.md`） |
+| モデル選択のピン留め廃止（`JsonModel` / `FastModel`） | **移行済み**（ルーターに委譲。6-4） |
+| 429 / `Retry-After` / 再試行方針 | **実装・テスト済み**（`AzureModelRouterClientTests` 19件） |
+| Azure Model Router の実デプロイによる応答 | **実測済み**（Azure AI Foundry に `model-router` をデプロイし、APIキー経路・Entra ID 経路の両方で応答を確認。下記 6-6） |
+| ルーターによるモデル自動選択 | **実測済み**（同一エンドポイントへの呼び出しで `gpt-5-mini` / `gpt-5.4-mini` / `gpt-oss-120b` が選ばれ、レスポンスの `model` に実モデル名が返ることを確認） |
+| `response_format: json_object`（意図解析経路） | **実測済み**（ルーター経由で JSON が返ることを確認） |
 | SwitchBot の署名生成・送信内容 | **テストで実証済み**（秘匿値はマスク） |
 | SwitchBot 実機のデバイス一覧・状態取得 | **実測済み**（Plug Mini 1台を検出） |
 | SwitchBot 実機の電源 OFF → 復元 | **実測済み**（`power on → off → on`） |
 | 確認フロー / レート上限 | **実装・テスト・実機実測すべて完了** |
 | つけっぱなし検知 | **実装・テスト済み**（7件） |
-| LLM による状況要約経路 | **実キーで実測済み**（下記参照） |
+| LLM による状況要約経路 | **経路として実測済み**（旧ルーター構成での計測。下記参照） |
 | Fabric Data Agent の疎通 | **HTTP 200 まで到達。ただしデータソース未到達**（下記 6-3） |
 
 ### 6-1. 実測ログ（抜粋）
@@ -335,56 +340,28 @@ LINE の webhook 処理は **1 イベントあたり 8 秒**でキャンセル�
 できていても家族には定型のタイムアウト文しか届きません。したがって応答速度は
 「体感の好み」ではなく **LINE で機能が成立するかどうかの分かれ目**です。
 
-| 用途 | モデル | 実測 |
-|---|---|---|
-| 意図分類（JSON） | `openai/gpt-4.1-mini`（ピン留め） | 約 2 秒 |
-| 状況要約 | `orcarouter/auto` → `qwen3.7-plus` / `deepseek-v4-pro` / `glm-5.2` | **5.6〜51 秒（分散が大きい）** |
-| 状況要約 | `openai/gpt-4.1-mini`（ピン留め） | **3〜5 秒** |
+自動ルーティングを使う以上、**遅いモデルを引く可能性は消せません**。実測でも、同一
+プロンプトの状況要約が速いときは数秒、推論（thinking）系に解決されると数十秒かかる
+という分散を観測しています。平均ではなく分散が問題です。
 
-`orcarouter/auto` は推論（thinking）系モデルに解決されることがあり、要約が
-20〜50 秒かかります。速いときは 5.6 秒で返るので**平均ではなく分散が問題**で、
-この状態では LINE 経由の要約はいずれ必ずタイムアウトします。
+そこで**モデルではなく「待てる時間」を経路ごとに宣言します**。
 
-一方で `orcarouter/auto` は、毎回違うモデルに解決される様子を
-ホーム画面の「AIモデル」表示（`Home.razor`）で見せられるという価値があります。
-そこで**モデルは経路ごとに選びます**。
-
-| 経路 | `purpose` | 使うモデル | 理由 |
+| 経路 | `purpose` | 予算 | 理由 |
 |---|---|---|---|
-| LINE webhook | `summary-fast` | `OrcaRouter:FastModel` | 8 秒の締切がある |
-| Web UI / API | `summary` | `OrcaRouter:Model`（`orcarouter/auto`） | 締切が無く、自動ルーティングを見せられる |
+| LINE webhook | `summary-fast` | `FastTimeoutSeconds`（既定 10 秒） | 8 秒の締切がある |
+| Web UI / API | `summary` | `TimeoutSeconds`（既定 30 秒） | 締切が無く、自動ルーティングの利点を活かす |
+| 意図分類（JSON） | `intent` | `TimeoutSeconds` | `response_format: json_object` を要求 |
 
 ```json
-"OrcaRouter": { "FastModel": "openai/gpt-4.1-mini" }
+"AzureModelRouter": { "TimeoutSeconds": 30, "FastTimeoutSeconds": 10 }
 ```
 
-`FastModel` を空にすると LINE も `Model` に落ちます。その場合 **LINE では要約が
-成立しません**（Web UI / API のみで使う前提にしてください）。
 なお `-fast` は「締切がある呼び出し」を表す接尾辞で、チャネル名ではありません。
 他の用途にも同じ規則で展開できます（例 `intent-fast`）。
 
-### タイムアウトしたときは `FastModel` へ退避する
-
-上表の分散は、後日さらに悪化した状態で観測されました。同一プロンプトを本番から
-3 回投げた実測が **120 秒超 / 24.8 秒 / 15.6 秒**（いずれも `qwen3.7-plus`）で、
-`OrcaRouter:TimeoutSeconds`（既定 30 秒）を超える引きが現実に発生します。
-
-問題は再試行の方でした。タイムアウト後も同じ `orcarouter/auto` を指定して投げ直すので、
-**また別の遅いモデルを引いて再びタイムアウトし、30 秒 × 3 回を費やして何も返さない**という
-挙動になり、ダッシュボードの要約が空のままになります。
-
-そこで `OrcaRouterClient` は、**タイムアウトした場合に限り**残りの再試行を `FastModel` に
-切り替えます（`CompleteAsync`）。
-
-- 1 回目は必ず `orcarouter/auto` のままなので、自動ルーティングを見せる価値は失われません。
-- 退避するのはタイムアウト（`HttpClient.Timeout` 由来の `TaskCanceledException`）のときだけです。
-  429 / 5xx は従来どおり同じモデルで再試行します。
-- すでに `FastModel` を使っている経路（`-fast`）は退避先が無いので、同じモデルで再試行します。
-- 呼び出し側がキャンセルした場合は再試行しません（放棄されたページ読み込みでトークンを使わないため）。
-
-本番ログでの実測: `timed out on orcarouter/auto; retrying on openai/gpt-4.1-mini` の直後に
-**2.3 秒で 200** が返り、`AiRequestLogs` にも成功として記録されました。
-回帰テストは `OrcaRouterClientTests` の `Timeout_on_the_auto_router_retries_on_the_fast_model` 他 2 件です。
+予算はリクエストごとに `CancellationTokenSource` で切っており、超過したぶんの再試行を
+含めても呼び出し側の締切を食い潰しません。予算内に返らなかった場合はローカル DB から
+作った定型の答えにフォールバックするため、**要約が空のまま返ることはありません**。
 
 #### Fabric の待ち時間予算（`Fabric:QueryTimeoutSeconds`、既定 2 秒）
 
@@ -436,14 +413,38 @@ ON と Toggle は「周囲に燃えやすいものや、動いていると危な
 特定のプラグを絶対に遠隔ONさせたくない場合は、機器の設定画面で
 「遠隔でONにすることを禁止する」にチェックを入れてください。
 
+### 6-6. Azure Model Router の実デプロイ実測
+
+Azure AI Foundry（`AIServices`, japaneast）に `model-router` をデプロイし、実際に応答することを確認しました。
+`model-router` は japaneast では提供されていますが **japanwest では提供されていません**（`az cognitiveservices model list` で確認）。
+
+確認できたこと。
+
+| 確認項目 | 結果 |
+|---|---|
+| APIキー（`api-key` ヘッダ）での呼び出し | 応答あり |
+| Entra ID（`Authorization: Bearer`、スコープ `https://cognitiveservices.azure.com/.default`）での呼び出し | 応答あり |
+| レスポンス `model` に実モデル名が返るか | 返る。呼び出しごとに `gpt-5-mini` / `gpt-5.4-mini` / `gpt-oss-120b` と変化した |
+| `temperature` の指定 | 400 にならず受理された |
+| `response_format: json_object` | JSON が返った（意図解析経路がそのまま使える） |
+
+**注意点（実測で判明）。** ルーターは推論モデル（`gpt-5-mini` など）を選ぶことがあります。
+推論モデルは `max_tokens` を推論トークンでも消費するため、`max_tokens` を小さく指定すると
+本文が空文字で返ります。本実装は `max_tokens` を送らずモデル既定に任せているため影響を受けませんが、
+将来 `max_tokens` を足す場合はこの挙動に注意してください。
+
+本番（App Service）側は、キーを Key Vault に置かず **Entra ID 認証**にしています。
+Key Vault が Private Endpoint 専用構成でネットワーク規則を変更したくなかったためです。
+アプリ設定は `AzureModelRouter__Endpoint` / `AzureModelRouter__Deployment` / `AzureModelRouter__UseEntraId=true` の 3 つで、
+App Service のシステム割り当てマネージド ID と Fabric 用サービスプリンシパルの双方に、
+この AI リソース**だけ**をスコープとした `Cognitive Services User` ロールを付与しています
+（アプリは Fabric が有効なとき Fabric 側の資格情報を共有するため、両方に必要です）。
+
 ### ユーザー側に残っている手作業
 
 1. Fabric Data Agent のデータソースをサービスプリンシパル対応の構成に直す（6-3）。
    直さない場合もローカル DB へフォールバックするため、デモは実施可能です。
 2. デモで照明を操作したい場合、照明を Plug Mini に挿して別名を合わせる（6-5）。
-3. 本番（App Service）の環境変数を `OrcaRouter__FastModel=openai/gpt-4.1-mini` に
-   する。**キー名が `OrcaRouter__SummaryModel` から変わりました**（旧名は削除して
-   ください）。未設定でも `appsettings.json` の既定値で動きますが、旧名だけが
-   残っていると無視されます（6-4）。
+3. （対応済み）本番（App Service）の Azure Model Router 接続設定。Entra ID 認証で構成済みです（6-6）。
 
 

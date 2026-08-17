@@ -106,17 +106,17 @@ const NODES: FlowNode[] = [
     accent: 'deliver',
   },
   {
-    id: 'orca',
+    id: 'router',
     // Bottom row with the streaming branch, because both are things the app
     // reaches out to on its own -- neither is a step on the way to this console.
     x: 0.085,
     y: 0.78,
-    title: 'OrcaRouter',
+    title: 'Model Router',
     // Short enough to stay on one line inside the card; the longer wording
     // ("自動モデル選択") wrapped mid-word at this card width.
-    subtitle: 'OpenAI 互換 / 自動選択',
-    // Counts only the calls that actually reached OrcaRouter, so the offline
-    // stub used before an API key exists can never inflate this.
+    subtitle: 'Azure AI Foundry / 自動選択',
+    // Counts only the calls that actually reached the router, so the offline
+    // stub used before a deployment exists can never inflate this.
     //
     // The model bars below now include a trailing bar for calls that never
     // resolved to a model, so they add up to the raw call count and this card
@@ -170,7 +170,7 @@ const NODES: FlowNode[] = [
     subtitle: 'MCP / 自然言語で照会',
     // Drawn to answer the obvious question the Eventhouse card raises: if the
     // console cannot read it, who does. This is who -- the app asks the Data
-    // Agent, which queries the Eventhouse. Rose like OrcaRouter because it is
+    // Agent, which queries the Eventhouse. Rose like Model Router because it is
     // the same branch: things the app consults to answer a question.
     metric: () => 'AI の質問応答',
     accent: 'ai',
@@ -240,7 +240,7 @@ const EDGES: FlowEdge[] = [
   },
   {
     from: 'app',
-    to: 'orca',
+    to: 'router',
     // One-way on purpose: a return edge between the same two nodes would take an
     // identical bend and land exactly on top of this one.
     label: '意図解析・要約を依頼',
@@ -700,7 +700,7 @@ export function DataFlowCanvas({ stats }: { stats: PipelineStats }) {
             {stats.aiCalls > 0 && (
               <span className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
-                AI 経路（OrcaRouter / Data Agent）
+                AI 経路（Model Router / Data Agent）
               </span>
             )}
             {stats.failedAlerts > 0 && (

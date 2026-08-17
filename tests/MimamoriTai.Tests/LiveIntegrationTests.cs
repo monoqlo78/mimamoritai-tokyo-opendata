@@ -15,7 +15,7 @@ using Xunit.Abstractions;
 namespace MimamoriTai.Tests;
 
 /// <summary>
-/// Tests that talk to the REAL OrcaRouter and SwitchBot services using the
+/// Tests that talk to the REAL Azure Model Router and SwitchBot services using the
 /// credentials in User Secrets. They are opt-in and are inert no-ops unless the
 /// environment asks for them, so `dotnet test` on a machine (or in CI) without
 /// credentials stays hermetic, offline and green:
@@ -42,28 +42,24 @@ public class LiveIntegrationTests(ITestOutputHelper output)
         .AddEnvironmentVariables()
         .Build();
 
-    private static OrcaRouterClient CreateAi(IConfiguration config, string? fastModel = null)
+    private static AzureModelRouterClient CreateAi(IConfiguration config)
     {
-        var options = new OrcaRouterOptions();
-        config.GetSection(OrcaRouterOptions.SectionName).Bind(options);
-
-        if (fastModel is not null)
-        {
-            options.FastModel = fastModel;
-        }
+        var options = new AzureModelRouterOptions();
+        config.GetSection(AzureModelRouterOptions.SectionName).Bind(options);
 
         // Mirrors the AddHttpClient configuration in ServiceCollectionExtensions:
         // the client issues relative URIs, so BaseAddress must be set here too.
         var http = new HttpClient
         {
-            BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/"),
-            Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds)
+            BaseAddress = new Uri(options.BuildBaseAddress()),
+            Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds + 5)
         };
 
-        return new OrcaRouterClient(
+        return new AzureModelRouterClient(
             http,
             Options.Create(options),
-            NullLogger<OrcaRouterClient>.Instance);
+            NullLogger<AzureModelRouterClient>.Instance,
+            options.UseEntraId ? new Azure.Identity.DefaultAzureCredential() : null);
     }
 
     private static SwitchBotDeviceProvider CreateSwitchBot(IConfiguration config)
@@ -129,7 +125,7 @@ public class LiveIntegrationTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public async Task OrcaRouter_Live_Answers_A_Prompt()
+    public async Task ModelRouter_Live_Answers_A_Prompt()
     {
         if (!LiveEnabled)
         {
@@ -137,7 +133,7 @@ public class LiveIntegrationTests(ITestOutputHelper output)
         }
 
         var ai = CreateAi(Config());
-        Assert.True(ai.IsConfigured, "OrcaRouter:ApiKey is missing from User Secrets.");
+        Assert.True(ai.IsConfigured, "AzureModelRouter:Endpoint / ApiKey are missing from User Secrets.");
 
         var result = await ai.CompleteAsync(
             [AiMessage.User("「元気ですか」と一言だけ日本語で返事してください。")],
@@ -146,10 +142,9 @@ public class LiveIntegrationTests(ITestOutputHelper output)
         Assert.True(result.Success, result.Error);
         Assert.False(string.IsNullOrWhiteSpace(result.Content));
 
-        // Router is read from the X-Orca-Router response header, which carries the
-        // router name ("auto" for orcarouter/auto) rather than the vendor name. It
-        // falls back to DisplayName only when the header is absent, so a non-empty
-        // value is what proves the call really reached OrcaRouter's router.
+        // ResolvedModel is read from the response's model field, which names the model
+        // the router actually chose rather than the deployment that was asked for. A
+        // value different from the deployment name is what proves routing happened.
         Assert.False(string.IsNullOrWhiteSpace(result.Router));
         Assert.False(string.IsNullOrWhiteSpace(result.ResolvedModel));
 
@@ -159,14 +154,13 @@ public class LiveIntegrationTests(ITestOutputHelper output)
 
     /// <summary>
     /// The regression this pins down: intent parsing asks for
-    /// <c>response_format: json_object</c>, which Anthropic models silently ignore --
-    /// they answer with the JSON wrapped in a markdown code fence, which is not
-    /// parseable. Because "orcarouter/auto" may resolve to Anthropic on any given
-    /// request, JSON calls are pinned to OrcaRouterOptions.JsonModel instead. This
-    /// asserts the live response really is parseable JSON.
+    /// <c>response_format: json_object</c>, which some models silently ignore -- they
+    /// answer with the JSON wrapped in a markdown code fence, which is not parseable.
+    /// Model router picks the underlying model per request, so this asserts the live
+    /// response really is parseable JSON whichever model it lands on.
     /// </summary>
     [Fact]
-    public async Task OrcaRouter_Live_Json_Mode_Returns_Parseable_Json()
+    public async Task ModelRouter_Live_Json_Mode_Returns_Parseable_Json()
     {
         if (!LiveEnabled)
         {
@@ -311,7 +305,7 @@ public class LiveIntegrationTests(ITestOutputHelper output)
     /// <summary>
     /// End-to-end proof of the "状況をまとめて伝える" journey with the real router:
     /// real device activity in the database -> a factual local-data answer -> a gentle,
-    /// family-facing Japanese summary written by OrcaRouter.
+    /// family-facing Japanese summary written by the model the router selected.
     ///
     /// Uses the local data service rather than Fabric on purpose: this asserts the
     /// summarisation path, and it must hold whether or not the Fabric Data Agent can

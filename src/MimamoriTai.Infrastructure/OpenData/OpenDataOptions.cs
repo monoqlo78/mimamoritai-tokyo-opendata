@@ -85,6 +85,51 @@ public sealed class OpenDataOptions
     /// </summary>
     public int ForecastToleranceHours { get; set; } = 3;
 
+    /// <summary>
+    /// 気象庁 警報・注意報: the current warning state for 東京都 (area 130000). Read for
+    /// 特別警報 only -- the ordinary 注意報 in this file change several times a day and
+    /// are not something to push to a family's phone.
+    /// </summary>
+    public string WarningJsonUrl { get; set; } = "https://www.jma.go.jp/bosai/warning/data/warning/130000.json";
+
+    /// <summary>
+    /// 気象庁 防災情報XML「随時」フィード. Carries 土砂災害警戒情報 and 顕著な大雨に関する
+    /// 気象情報 (線状降水帯), neither of which appears in the warning JSON above.
+    /// </summary>
+    public string DisasterFeedUrl { get; set; } = "https://www.data.jma.go.jp/developer/xml/feed/extra.xml";
+
+    /// <summary>
+    /// 気象庁 地震情報一覧. Nationwide, so entries are filtered down to
+    /// <see cref="PrefectureCode"/> before anything is shown.
+    /// </summary>
+    public string QuakeListUrl { get; set; } = "https://www.jma.go.jp/bosai/quake/data/list.json";
+
+    /// <summary>
+    /// 都道府県コード for the household's area, as 気象庁 numbers them. "13" is 東京都; the
+    /// six-digit "130000" form used by the warning feed is derived from it.
+    /// </summary>
+    public string PrefectureCode { get; set; } = "13";
+
+    /// <summary>
+    /// The weakest 震度 worth telling a family about. Below 5弱 the published guidance is
+    /// that furniture does not move, so a push would be noise -- and noise is what makes
+    /// the heatstroke alert get muted. Accepts 気象庁 notation: 1..4, 5-, 5+, 6-, 6+, 7.
+    /// </summary>
+    public string MinimumQuakeIntensity { get; set; } = "5-";
+
+    /// <summary>
+    /// How long emergency information is reused. Shorter than <see cref="CacheMinutes"/>
+    /// because this is the one class of figure where being ten minutes late matters.
+    /// </summary>
+    public int DisasterCacheMinutes { get; set; } = 5;
+
+    /// <summary>
+    /// How far back an advisory still counts as "active". 気象庁 leaves an entry in the
+    /// feed long after the rain has stopped, and a family does not need to hear about
+    /// yesterday's warning at breakfast.
+    /// </summary>
+    public int DisasterActiveHours { get; set; } = 6;
+
     public string Attribution { get; set; } = "出典：環境省熱中症予防情報サイト／気象庁";
 
     /// <summary>

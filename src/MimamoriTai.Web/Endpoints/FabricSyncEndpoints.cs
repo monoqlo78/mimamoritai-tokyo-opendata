@@ -47,6 +47,7 @@ public static class FabricSyncEndpoints
                 alerts = result.Alerts,
                 activityBuckets = result.ActivityBuckets,
                 aiRouterCalls = result.AiRouterCalls,
+                outdoorReadings = result.OutdoorReadings,
                 totalRows = result.TotalRows,
                 durationMs = result.DurationMs,
                 error = result.Error,

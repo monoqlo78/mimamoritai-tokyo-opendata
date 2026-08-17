@@ -73,7 +73,8 @@ public sealed class WatchAlertService(
     WatchAlertSettings settings,
     ILineRecipientResolver recipientResolver,
     IAiRouterClient? ai = null,
-    IWeatherAdvisoryProvider? heatAdvisory = null)
+    IWeatherAdvisoryProvider? heatAdvisory = null,
+    IDisasterAdvisoryProvider? disasterAdvisory = null)
 {
     public async Task<WatchAlertOutcome> EvaluateAsync(Guid householdId, CancellationToken ct = default)
     {
@@ -105,12 +106,17 @@ public sealed class WatchAlertService(
             // that morning.
             var forecastNotice = await TrySendColdForecastAsync(householdId, resident.Id, nowLocal, risks, ct);
 
+            // Emergency information is likewise not a risk score: 気象庁 issuing a
+            // landslide warning says nothing about her kettle, so it cannot be folded
+            // into the threshold below without either inflating or hiding it.
+            var disasterNotice = await TrySendDisasterNoticeAsync(householdId, resident, today, ct);
+
             if (risk.Level < settings.Threshold)
             {
                 return new WatchAlertOutcome(
                     WatchAlertStatus.BelowThreshold,
                     risk,
-                    forecastNotice ?? "現在はリスクが低いため、アラートの送信は不要です。",
+                    disasterNotice ?? forecastNotice ?? "現在はリスクが低いため、アラートの送信は不要です。",
                     null);
             }
 
@@ -245,6 +251,117 @@ public sealed class WatchAlertService(
 
     private const string ColdForecastReasonPrefix = "翌朝の冷え込み予報 ";
 
+    private const string DisasterReasonPrefix = "防災情報 ";
+
+    /// <summary>
+    /// Tells the family that emergency information covers the household's area, and --
+    /// this is the point -- pairs it with whether the appliances have been used today.
+    ///
+    /// <para>
+    /// The warning itself is already on every phone in Japan via 緊急速報メール, so simply
+    /// repeating it would add nothing. What a family cannot get anywhere else is the
+    /// second sentence: 気象庁 says there is a landslide warning over her ward, and the
+    /// kettle went on at 07:15. That is the difference between an alarm and an answer,
+    /// and it is built only from figures this app already holds.
+    /// </para>
+    ///
+    /// <para>
+    /// Deduplicated on the advisory's own identity rather than a cooldown window: a
+    /// 土砂災害警戒情報 stays active for hours, and a family should hear about it once.
+    /// </para>
+    /// </summary>
+    private async Task<string?> TrySendDisasterNoticeAsync(
+        Guid householdId,
+        Person resident,
+        DailyActivity today,
+        CancellationToken ct)
+    {
+        if (disasterAdvisory is not { IsConfigured: true })
+        {
+            return null;
+        }
+
+        var active = await disasterAdvisory.GetActiveAsync(ct);
+        if (active.Count == 0)
+        {
+            return null;
+        }
+
+        // Only the most serious one is sent. Heavy rain and a landslide warning arrive
+        // together by design, and two pushes about the same weather is how a family
+        // learns to swipe this app away.
+        var advisory = active
+            .OrderByDescending(a => Severity(a.Kind))
+            .ThenByDescending(a => a.IssuedAtUtc)
+            .First();
+
+        var marker = DisasterReasonPrefix + advisory.DedupeKey;
+        var alreadySent = await db.WatchAlerts
+            .AnyAsync(a => a.PersonId == resident.Id && a.Reason == marker, ct);
+
+        if (alreadySent)
+        {
+            return null;
+        }
+
+        var headline = advisory.Kind == DisasterKind.Earthquake
+            ? $"{advisory.AreaName}を震源とする地震がありました（{advisory.Detail}）。"
+            : $"{advisory.AreaName}に{advisory.Headline}が出ています。";
+
+        // Written from the activity figure alone. When nothing has been recorded yet the
+        // notice says exactly that -- it must never round "no data" up to "she is fine",
+        // nor down to "something has happened".
+        var status = today.LastActivityTime is { } last
+            ? $"{resident.DisplayName}のお宅では{last:HH\\:mm}に家電の利用がありました。"
+            : $"{resident.DisplayName}のお宅では本日まだ家電の利用を確認できていません。";
+
+        var text = headline + status;
+
+        var recipients = await recipientResolver.ResolveAsync(householdId, ct);
+        var origin = settings.PublicBaseUrl.TrimEnd('/');
+        var hasOrigin = !string.IsNullOrWhiteSpace(origin)
+            && origin.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+        var result = await PushToAllAsync(
+            recipients,
+            new LineAlertCard(
+                Title: advisory.Kind == DisasterKind.Earthquake ? "地震がありました" : advisory.Headline,
+                Text: text,
+                RiskLabel: "ご家族の様子を確認しましょう",
+                ImageUrl: hasOrigin ? $"{origin}{MascotImagePath}" : null,
+                LinkUrl: hasOrigin ? origin : null),
+            ct);
+
+        db.WatchAlerts.Add(new WatchAlert
+        {
+            HouseholdId = householdId,
+            PersonId = resident.Id,
+            RiskLevel = RiskLevel.Low,
+            Score = 0,
+            Reason = marker,
+            Message = text,
+            SentAtUtc = clock.GetUtcNow(),
+            Success = result.Success,
+            Error = result.Error
+        });
+        await db.SaveChangesAsync(ct);
+
+        return result.Success ? $"防災情報をお知らせしました（{text}）" : null;
+    }
+
+    /// <summary>
+    /// Which advisory wins when several are active. Ordered by how little time the
+    /// household has to act on it, not by how rare it is.
+    /// </summary>
+    private static int Severity(DisasterKind kind) => kind switch
+    {
+        DisasterKind.SpecialWarning => 4,
+        DisasterKind.Earthquake => 3,
+        DisasterKind.Landslide => 2,
+        DisasterKind.HeavyRainBand => 1,
+        _ => 0
+    };
+
     /// <summary>
     /// Builds the mascot card for an alert. The image is only referenced when a public
     /// origin is configured, so a local run degrades to the same text push as before.
@@ -325,7 +442,7 @@ public sealed class WatchAlertService(
     private const int MaxAiMessageLength = 120;
 
     /// <summary>
-    /// Produces the alert text. When OrcaRouter is configured the wording is generated so
+    /// Produces the alert text. When the AI router is configured the wording is generated so
     /// it reads naturally for the family; the deterministic template is always used as the
     /// fallback, so alerting never depends on the LLM being reachable.
     /// </summary>
@@ -346,7 +463,12 @@ public sealed class WatchAlertService(
                     "あなたは高齢者見守りサービスの通知文を書く日本語アシスタントです。" +
                     "離れて暮らす家族に送るLINEメッセージを1通だけ書いてください。" +
                     "条件: 60文字以内、1行、丁寧で落ち着いた口調、煽らない、断定しない、" +
-                    "絵文字と挨拶と前置きは不要、事実と次の行動の提案のみ。"),
+                    "絵文字と挨拶と前置きは不要、事実と次の行動の提案のみ。" +
+                    "**検知内容に書かれていない事実を足さないでください。**" +
+                    "特に、検知内容に無い家電の名前や、その電源が入っている・切れているという断定は" +
+                    "禁止です。検知内容が「確認できません」と述べている事柄は、" +
+                    "確認できない旨のまま書いてください（例:「エアコン未使用です」と言い切るのではなく" +
+                    "「室温にお気をつけください」のように書く）。"),
                 new("user",
                     $"対象: {residentName}\n" +
                     $"リスク: {risk.Level}（スコア {risk.Score}/100）\n" +
@@ -360,7 +482,15 @@ public sealed class WatchAlertService(
             }
 
             var text = completion.Content.ReplaceLineEndings(" ").Trim();
-            return string.IsNullOrWhiteSpace(text) || text.Length > MaxAiMessageLength ? fallback : text;
+            if (string.IsNullOrWhiteSpace(text) || text.Length > MaxAiMessageLength)
+            {
+                return fallback;
+            }
+
+            // A prompt is a request, not a guarantee. The model has been observed turning
+            // "冷房機器が未登録のため室内の状況は確認できません" into "エアコン未使用です",
+            // which states a measurement we do not have. Reject that rather than send it.
+            return InventsApplianceState(text, risk.Reason) ? fallback : text;
         }
         catch (Exception)
         {
@@ -371,6 +501,38 @@ public sealed class WatchAlertService(
 
     private static string BuildMessage(string residentName, RiskResult risk) =>
         $"{residentName}の見守りアラートです。{risk.Reason}。（スコア {risk.Score}/100）";
+
+    /// <summary>
+    /// Wordings that assert an appliance is not running. We only ever know this when a
+    /// household registered the appliance and we read its draw; the rule that fires
+    /// without a registered appliance says 「確認できません」 instead.
+    /// </summary>
+    private static readonly string[] IdleApplianceClaims =
+    [
+        "未使用", "使っていません", "使われていません", "使用されていません",
+        "動いていません", "作動していません", "稼働していません",
+        "ついていません", "点いていません", "入っていません",
+        "オフのまま", "切れたまま", "停止しています"
+    ];
+
+    /// <summary>
+    /// True when the generated text claims an appliance is idle but the detected reason
+    /// never said so. This is the one hallucination that matters here: a family reading
+    /// 「エアコン未使用です」 will believe we measured the air conditioner, and act -- or
+    /// fail to act -- on a measurement that does not exist.
+    /// </summary>
+    internal static bool InventsApplianceState(string text, string? reason)
+    {
+        // The reason itself established the appliance is idle, so the model is allowed
+        // to say it in its own words.
+        if (reason is not null
+            && IdleApplianceClaims.Any(c => reason.Contains(c, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        return IdleApplianceClaims.Any(c => text.Contains(c, StringComparison.Ordinal));
+    }
 
     /// <summary>
     /// Loads today's activity plus a 14 day baseline using explicit local dates derived

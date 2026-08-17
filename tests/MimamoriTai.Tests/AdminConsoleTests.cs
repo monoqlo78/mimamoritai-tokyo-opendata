@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Options;
+﻿using Microsoft.Extensions.Options;
 using MimamoriTai.Core.Abstractions;
 using MimamoriTai.Core.Domain;
 using MimamoriTai.Infrastructure.Auth;
@@ -249,7 +249,7 @@ public class AdminConsoleTests
             {
                 HouseholdId = testDb.HouseholdId,
                 Purpose = "summary",
-                Router = "orcarouter",
+                Router = "Azure Model Router",
                 ResolvedModel = "gpt-x",
                 DurationMs = 100,
                 Success = true,
@@ -259,7 +259,7 @@ public class AdminConsoleTests
             {
                 HouseholdId = testDb.HouseholdId,
                 Purpose = "summary",
-                Router = "orcarouter",
+                Router = "Azure Model Router",
                 ResolvedModel = "gpt-x",
                 DurationMs = 300,
                 Success = false,
@@ -295,18 +295,18 @@ public class AdminConsoleTests
             {
                 HouseholdId = testDb.HouseholdId,
                 Purpose = "intent",
-                Router = "orcarouter",
+                Router = "Azure Model Router",
                 ResolvedModel = "auto",
                 DurationMs = 365,
                 Success = false,
-                Error = "OrcaRouter returned 401.",
+                Error = "Azure Model Router returned 401.",
                 CreatedAtUtc = now.AddHours(-1)
             },
             new AiRequestLog
             {
                 HouseholdId = testDb.HouseholdId,
                 Purpose = "intent",
-                Router = "orcarouter",
+                Router = "Azure Model Router",
                 ResolvedModel = "auto",
                 DurationMs = 400,
                 Success = false,
@@ -323,7 +323,7 @@ public class AdminConsoleTests
 
         var usage = Assert.Single(model.AiUsage);
         Assert.Equal(2, usage.Failures);
-        Assert.Equal("OrcaRouter returned 401.", usage.LastError);
+        Assert.Equal("Azure Model Router returned 401.", usage.LastError);
     }
 
     [Fact]
@@ -336,7 +336,7 @@ public class AdminConsoleTests
         {
             HouseholdId = testDb.HouseholdId,
             Purpose = "summary",
-            Router = "orcarouter",
+            Router = "Azure Model Router",
             ResolvedModel = "gpt-x",
             DurationMs = 100,
             Success = true,

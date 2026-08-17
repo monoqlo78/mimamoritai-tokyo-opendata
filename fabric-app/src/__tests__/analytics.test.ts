@@ -4,10 +4,12 @@ import {
   activitySummary,
   alertsByDay,
   dailyActivity,
+  dailyOutdoor,
   deliveryStats,
   deviceBreakdown,
   hourlyRhythm,
   householdBars,
+  outdoorSummary,
   pipelineStats,
   riskDistribution,
   routerModels,
@@ -20,13 +22,105 @@ import type {
   AiRouterCallRow,
   AlertRow,
   HouseholdRow,
+  OutdoorRow,
 } from '@/services/monitoring';
+
+function outdoor(overrides: Partial<OutdoorRow> = {}): OutdoorRow {
+  return {
+    id: 'o1',
+    pointCode: '44132',
+    areaName: '東京',
+    bucketStart: new Date('2026-08-01T03:00:00Z'),
+    temperatureC: '30',
+    minTemperatureC: '29',
+    maxTemperatureC: '31',
+    humidityPercent: '60',
+    maxWbgt: '28',
+    heatLevel: '3',
+    coldLevel: '0',
+    sampleCount: '6',
+    ...overrides,
+  };
+}
+
+describe('outdoor observations', () => {
+  it('keeps an unobserved day as a gap rather than 0℃', () => {
+    // 2026-08-01 09:00 JST and 2026-08-03 09:00 JST: the 2nd was never observed.
+    const points = dailyOutdoor([
+      outdoor({ bucketStart: new Date('2026-08-01T00:00:00Z') }),
+      outdoor({ id: 'o2', bucketStart: new Date('2026-08-03T00:00:00Z') }),
+    ]);
+
+    expect(points).toHaveLength(3);
+    expect(points[1].measured).toBe(false);
+
+    // The gap must not read as a cold snap: nothing downstream may treat this as 0℃.
+    expect(points[0].measured).toBe(true);
+    expect(points[2].measured).toBe(true);
+  });
+
+  it('bands a day by its own min and max, not by the hourly mean', () => {
+    const [point] = dailyOutdoor([
+      outdoor({
+        bucketStart: new Date('2026-08-01T00:00:00Z'),
+        temperatureC: '26',
+        minTemperatureC: '24',
+        maxTemperatureC: '28',
+      }),
+      outdoor({
+        id: 'o2',
+        bucketStart: new Date('2026-08-01T05:00:00Z'),
+        temperatureC: '34',
+        minTemperatureC: '33',
+        maxTemperatureC: '36',
+        maxWbgt: '31',
+      }),
+    ]);
+
+    expect(point.minC).toBe(24);
+    expect(point.maxC).toBe(36);
+    expect(point.avgC).toBe(30);
+    // The peak, not the mean: the warning is about the worst moment of the day.
+    expect(point.maxWbgt).toBe(31);
+  });
+
+  it('reports 未計測 as null instead of zero when WBGT is out of season', () => {
+    const summary = outdoorSummary([
+      outdoor({ temperatureC: '2', maxWbgt: '', heatLevel: '0', coldLevel: '2' }),
+    ]);
+
+    expect(summary.maxWbgt).toBeNull();
+    expect(summary.minC).toBe(2);
+    expect(summary.cautionHours).toBe(0);
+  });
+
+  it('counts 警戒 hours and the newest observation', () => {
+    const summary = outdoorSummary([
+      outdoor({ bucketStart: new Date('2026-08-01T03:00:00Z'), heatLevel: '3' }),
+      outdoor({
+        id: 'o2',
+        bucketStart: new Date('2026-08-01T05:00:00Z'),
+        temperatureC: '35',
+        heatLevel: '4',
+        areaName: '東京',
+      }),
+      outdoor({ id: 'o3', bucketStart: new Date('2026-08-01T04:00:00Z'), heatLevel: '2' }),
+    ]);
+
+    expect(summary.hours).toBe(3);
+    expect(summary.points).toBe(1);
+    expect(summary.cautionHours).toBe(2);
+    expect(summary.latestC).toBe(35);
+    expect(summary.maxC).toBe(35);
+    expect(summary.latestAt?.toISOString()).toBe('2026-08-01T05:00:00.000Z');
+  });
+});
 
 function aiCall(overrides: Partial<AiRouterCallRow> = {}): AiRouterCallRow {
   return {
     id: 'ai1',
     purpose: 'intent',
-    router: 'auto',
+    router: 'Azure Model Router',
     resolvedModel: 'deepseek-v4-pro',
     callCount: '7',
     successCount: '7',
@@ -419,28 +513,15 @@ describe('routerModels', () => {
     expect(bars[0].purposes).toEqual(['intent', 'summary']);
     // (6*1000 + 2*5000) / 8 -- not the unweighted 3000.
     expect(bars[0].avgMs).toBe(2000);
-    expect(bars[0].autoRouted).toBe(true);
-  });
-
-  it('marks pinned models separately from the ones OrcaRouter chose', () => {
-    const bars = routerModels([
-      aiCall({ router: 'OrcaRouter', resolvedModel: 'gpt-4.1-mini', callCount: '35' }),
-      aiCall({ router: 'auto', resolvedModel: 'glm-5.2', callCount: '2' }),
-    ]);
-
-    expect(bars.map((bar) => [bar.model, bar.autoRouted])).toEqual([
-      ['gpt-4.1-mini', false],
-      ['glm-5.2', true],
-    ]);
   });
 
   it('excludes the offline stub but keeps failures as their own bar', () => {
     const bars = routerModels([
       aiCall({ router: 'MockAiRouter', resolvedModel: 'mock/local-rules', callCount: '2' }),
-      aiCall({ router: 'OrcaRouter', resolvedModel: 'auto', callCount: '1', successCount: '0' }),
+      aiCall({ resolvedModel: '', callCount: '1', successCount: '0' }),
     ]);
 
-    // The stub never reached OrcaRouter, so it gets no bar at all. The failure
+    // The stub never reached the router, so it gets no bar at all. The failure
     // did reach it and gets one, flagged so it is not drawn as a model.
     expect(bars).toHaveLength(1);
     expect(bars[0].unresolved).toBe(true);
@@ -450,7 +531,7 @@ describe('routerModels', () => {
 
   it('gives no failure bar when every call resolved', () => {
     const bars = routerModels([
-      aiCall({ router: 'OrcaRouter', resolvedModel: 'gpt-4.1-mini', callCount: '5' }),
+      aiCall({ resolvedModel: 'gpt-4.1-mini', callCount: '5' }),
     ]);
 
     expect(bars.some((bar) => bar.unresolved)).toBe(false);
@@ -458,25 +539,23 @@ describe('routerModels', () => {
 });
 
 describe('routerSummary', () => {
-  it('separates OrcaRouter traffic from the local stub', () => {
+  it('separates Model Router traffic from the local stub', () => {
     const summary = routerSummary([
-      aiCall({ router: 'OrcaRouter', resolvedModel: 'gpt-4.1-mini', callCount: '50', successCount: '50', avgDurationMs: '1800' }),
-      aiCall({ router: 'auto', resolvedModel: 'glm-5.2', callCount: '10', successCount: '10', avgDurationMs: '6000' }),
+      aiCall({ resolvedModel: 'gpt-4.1-mini', callCount: '50', successCount: '50', avgDurationMs: '1800' }),
+      aiCall({ resolvedModel: 'glm-5.2', callCount: '10', successCount: '10', avgDurationMs: '6000' }),
       aiCall({ router: 'MockAiRouter', resolvedModel: 'mock/local-rules', callCount: '2', successCount: '2', avgDurationMs: '1' }),
     ]);
 
     expect(summary.calls).toBe(60);
     expect(summary.mockCalls).toBe(2);
-    expect(summary.autoCalls).toBe(10);
-    expect(summary.pinnedCalls).toBe(50);
     expect(summary.models).toBe(2);
-    expect(summary.autoAvgMs).toBe(6000);
-    expect(summary.pinnedAvgMs).toBe(1800);
+    // (50*1800 + 10*6000) / 60 -- the stub is excluded, so it cannot drag this down.
+    expect(summary.avgMs).toBe(2500);
   });
 
   it('counts a failed call even though it has no model to attribute', () => {
     const summary = routerSummary([
-      aiCall({ router: 'OrcaRouter', resolvedModel: 'auto', callCount: '1', successCount: '0' }),
+      aiCall({ resolvedModel: '', callCount: '1', successCount: '0' }),
     ]);
 
     expect(summary.calls).toBe(1);
@@ -487,14 +566,14 @@ describe('routerSummary', () => {
 
   // The console used to print "記録した 77 回" above bars that added up to 76 and
   // said nothing about the gap, which reads as a miscount. The failed call now
-  // gets its own bar, so the bars total every OrcaRouter call.
-  it('draws a bar for every OrcaRouter call, including the ones with no model', () => {
+  // gets its own bar, so the bars total every router call.
+  it('draws a bar for every router call, including the ones with no model', () => {
     const rows = [
-      aiCall({ router: 'OrcaRouter', resolvedModel: 'gpt-4.1-mini', callCount: '52' }),
-      aiCall({ router: 'auto', resolvedModel: 'deepseek-v4-pro', callCount: '10' }),
-      aiCall({ router: 'auto', resolvedModel: 'qwen3.7-plus', callCount: '9' }),
-      aiCall({ router: 'auto', resolvedModel: 'glm-5.2', callCount: '5' }),
-      aiCall({ router: 'OrcaRouter', resolvedModel: 'auto', callCount: '1', successCount: '0' }),
+      aiCall({ resolvedModel: 'gpt-4.1-mini', callCount: '52' }),
+      aiCall({ resolvedModel: 'deepseek-v4-pro', callCount: '10' }),
+      aiCall({ resolvedModel: 'qwen3.7-plus', callCount: '9' }),
+      aiCall({ resolvedModel: 'glm-5.2', callCount: '5' }),
+      aiCall({ resolvedModel: '', callCount: '1', successCount: '0' }),
       aiCall({ router: 'MockAiRouter', resolvedModel: 'mock/local-rules', callCount: '2' }),
     ];
 
@@ -527,15 +606,15 @@ describe('routerSummary', () => {
 });
 
 describe('pipelineStats AI totals', () => {
-  it('feeds the diagram only calls that reached OrcaRouter', () => {
+  it('feeds the diagram only calls that reached the router', () => {
     const stats = pipelineStats([household()], [alert()], [], 'fabric', [
-      aiCall({ router: 'auto', resolvedModel: 'qwen3.7-plus', callCount: '6' }),
+      aiCall({ resolvedModel: 'qwen3.7-plus', callCount: '6' }),
       aiCall({ router: 'MockAiRouter', resolvedModel: 'mock/local-rules', callCount: '2' }),
     ]);
 
     expect(stats.aiCalls).toBe(6);
     expect(stats.aiModels).toBe(1);
-    expect(stats.aiAutoCalls).toBe(6);
+    expect(stats.aiResolvedCalls).toBe(6);
   });
 
   it('reports no AI traffic when the table is empty', () => {

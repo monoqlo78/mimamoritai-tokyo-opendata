@@ -1,5 +1,8 @@
 // 見守り隊 / CareRoute AI - 提出用プレゼン資料
 // 実行: node scripts/build-deck.js
+// 注意: このスクリプトが出力するのは 13 枚。提出版 docs/mimamoritai-deck.pptx は
+//       これに showcase スライド 3 枚を後から足した 16 枚のため、無条件に実行すると
+//       その 3 枚が消える。再生成したら追加分を戻すこと。
 const path = require('path');
 const fs = require('fs');
 const PptxGenJS = require('pptxgenjs');
@@ -336,7 +339,7 @@ function title(slide, text, sub) {
     ['入力', 'SwitchBot Plug Mini\nLINE Messaging API', C.rose],
     ['アプリ', '.NET 10 Blazor\nApp Service', C.berry],
     ['蓄積', 'Azure SQL\nFabric Eventhouse', C.berry],
-    ['分析', 'Fabric Data Agent\nOrcaRouter (LLM)', C.rose],
+    ['分析', 'Fabric Data Agent\nAzure Model Router (LLM)', C.rose],
   ];
   boxes.forEach((b, i) => {
     const x = 0.62 + i * 2.26;
@@ -523,7 +526,7 @@ function title(slide, text, sub) {
   });
 
   const stats = [
-    ['977', 'テスト（失敗ゼロ）'],
+    ['1,004', 'テスト（失敗ゼロ）'],
     ['0', '必要なAPIキー（デモ実行時）'],
     ['3', '記録した「沈黙した障害」'],
   ];

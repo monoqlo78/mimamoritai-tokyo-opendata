@@ -7,24 +7,29 @@ import {
   DeviceBreakdown,
   EnergyProfile,
   EnergyTrend,
+  formatC,
   formatWh,
   HouseholdBars,
+  OutdoorTrend,
   RhythmHeatmap,
   RiskDonut,
   RouterModels,
 } from '@/components/charts';
 import { DataFlowCanvas } from '@/components/DataFlowCanvas';
 import { useAuth } from '@/hooks/AuthContext';
+import { askConsole, isAskAvailable, SUGGESTED_QUESTIONS, type AskResult } from '@/services/ask';
 import {
   activitySummary,
   alertsByDay,
   dailyActivity,
   dailyEnergy,
+  dailyOutdoor,
   deliveryStats,
   deviceBreakdown,
   hourlyEnergy,
   hourlyRhythm,
   householdBars,
+  outdoorSummary,
   pipelineStats,
   riskDistribution,
   routerModels,
@@ -39,6 +44,7 @@ import {
   getAlerts,
   getDataOrigin,
   getHouseholds,
+  getOutdoor,
   summarize,
   SNAPSHOT_TAKEN_AT,
   type ActivityRow,
@@ -46,6 +52,7 @@ import {
   type AlertRow,
   type DataOrigin,
   type HouseholdRow,
+  type OutdoorRow,
 } from '@/services/monitoring';
 import { isLocalBackend } from '@/services/rayfinClient';
 
@@ -55,6 +62,7 @@ export function HomePage() {
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [aiCalls, setAiCalls] = useState<AiRouterCallRow[]>([]);
+  const [outdoor, setOutdoor] = useState<OutdoorRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,18 +79,21 @@ export function HomePage() {
     setError(null);
     beginRefresh();
     try {
-      const [householdRows, alertRows, activityRows, aiRows] = await Promise.all([
+      const [householdRows, alertRows, activityRows, aiRows, outdoorRows] = await Promise.all([
         getHouseholds(),
         getAlerts(),
         // Activity is the newest table; tolerate a backend that predates it so
         // the rest of the console still renders.
         getActivity().catch(() => [] as ActivityRow[]),
         getAiRouterCalls().catch(() => [] as AiRouterCallRow[]),
+        // Outdoor observations are newer still, for the same reason.
+        getOutdoor().catch(() => [] as OutdoorRow[]),
       ]);
       setHouseholds(householdRows);
       setAlerts(alertRows);
       setActivity(activityRows);
       setAiCalls(aiRows);
+      setOutdoor(outdoorRows);
       setOrigin(getDataOrigin());
       setHasLoaded(true);
     } catch (e) {
@@ -129,6 +140,11 @@ export function HomePage() {
   const energyTotal = energyDaily.reduce((sum, point) => sum + point.wh, 0);
   const aiModels = routerModels(aiCalls);
   const aiSummary = routerSummary(aiCalls);
+
+  // Outdoor observations are a public series for an observation point, not a
+  // per-household measurement, so they deliberately ignore the household scope.
+  const outdoorDaily = dailyOutdoor(outdoor, energyDays);
+  const outdoorTotals = outdoorSummary(outdoor);
 
   // Every "全世帯" caption on this page is now a claim about the selected slice, so it
   // has to name the slice or it silently overstates what was counted.
@@ -260,6 +276,8 @@ export function HomePage() {
           <Kpi label="通知失敗" value={totals.failedAlerts} sub="直近期間" alert={totals.failedAlerts > 0} />
         </section>
 
+        <AskPanel />
+
         <section className="rounded-xl border border-gray-200 bg-white p-5">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
             <div>
@@ -288,17 +306,17 @@ export function HomePage() {
         <section className="rounded-xl border border-gray-200 bg-white p-5">
           <div className="mb-4">
             <h2 className="text-base font-semibold text-gray-900">
-              OrcaRouter が使ったモデル
+              Azure Model Router が選んだモデル
             </h2>
             <p className="mt-1 text-xs text-gray-500">
-              見守り隊の AI 呼び出しは OpenAI 互換の OrcaRouter を通ります。
+              見守り隊の AI 呼び出しは Azure AI Foundry の Model Router を通ります。
               記録した {aiSummary.calls.toLocaleString()} 回のうち{' '}
               <span className="font-medium text-rose-700">
                 {(aiSummary.calls - aiSummary.unresolvedCalls).toLocaleString()} 回
               </span>{' '}
               が {aiSummary.models} 種類のモデルで応答しました（成功{' '}
               {aiSummary.success.toLocaleString()} 回）。
-              用途ごとに別ベンダのモデルへ振り分けられています。
+              モデルはリクエストごとに Model Router が自動で選びます。
             </p>
             <p className="mt-1 text-[11px] text-gray-400">
               AI の呼び出しは用途単位で記録しており世帯に紐づかないため、
@@ -306,7 +324,7 @@ export function HomePage() {
             </p>
             <p className="mt-1 text-xs text-gray-500">
               下段の細い棒は平均応答時間です。LINE の webhook は 8 秒でイベントを
-              打ち切るため、締切のある経路には速いモデルを使っています。
+              打ち切るため、締切のある経路には短いタイムアウトを設定しています。
             </p>
             {aiSummary.unresolvedCalls > 0 && (
               <p className="mt-1 text-[11px] text-gray-400">
@@ -318,8 +336,8 @@ export function HomePage() {
             )}
             {aiSummary.mockCalls > 0 && (
               <p className="mt-1 text-[11px] text-gray-400">
-                API キー未設定時のローカルスタブ {aiSummary.mockCalls} 回は
-                OrcaRouter を経由していないため、上の集計から除いています。
+                デプロイ未設定時のローカルスタブ {aiSummary.mockCalls} 回は
+                Model Router を経由していないため、上の集計から除いています。
               </p>
             )}
           </div>
@@ -441,6 +459,86 @@ export function HomePage() {
                   計測できた日の平均。生活リズムと見比べてください。
                 </p>
                 <EnergyProfile hours={energyHours} />
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="mt-6 rounded-lg border border-gray-200 bg-white p-6">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">
+                外の暑さ・寒さ（環境省 WBGT／気象庁 AMeDAS）
+              </h2>
+              <p className="mt-1 text-xs text-gray-500">
+                観測地点ごとの公開データを1時間単位にまとめたものです。世帯単位の計測ではないため、
+                上の世帯フィルターの影響を受けません。電気の使い方と並べて見ると
+                「暑いのに冷房が動いていない」が分かります。
+              </p>
+            </div>
+            {outdoorTotals.latestC !== null && outdoorTotals.latestAt !== null && (
+              <div className="text-right">
+                <div className="text-xs text-gray-500">
+                  最新（{outdoorTotals.latestArea || '観測地点'}）
+                </div>
+                <div className="text-lg font-semibold text-orange-600">
+                  {formatC(outdoorTotals.latestC)}
+                </div>
+                <div className="text-[11px] text-gray-400">
+                  {outdoorTotals.latestAt.toLocaleString('ja-JP')}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {outdoorTotals.hours === 0 ? (
+            <p className="text-sm text-gray-400">
+              気温データがまだ取り込まれていません。屋外データの同期が動くと表示されます。
+            </p>
+          ) : (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800">
+                  日別の気温（{energyDays === 7 ? '直近1週間' : '直近1カ月'}）
+                </h3>
+                <p className="mb-3 text-xs text-gray-500">
+                  帯は最低〜最高、白線はその日の平均。斜線の日は観測がありません。
+                </p>
+                <OutdoorTrend points={outdoorDaily} />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800">期間のまとめ</h3>
+                <p className="mb-3 text-xs text-gray-500">
+                  観測地点 {outdoorTotals.points} 地点 ／ {outdoorTotals.hours} 時間分
+                </p>
+                <dl className="grid grid-cols-2 gap-3 text-sm">
+                  <Fact
+                    label="最高気温"
+                    value={outdoorTotals.maxC === null ? '未計測' : formatC(outdoorTotals.maxC)}
+                  />
+                  <Fact
+                    label="最低気温"
+                    value={outdoorTotals.minC === null ? '未計測' : formatC(outdoorTotals.minC)}
+                  />
+                  <Fact
+                    label="暑さ指数（最高）"
+                    value={
+                      outdoorTotals.maxWbgt === null
+                        ? '未計測'
+                        : outdoorTotals.maxWbgt.toFixed(1)
+                    }
+                    note={
+                      outdoorTotals.maxWbgt === null
+                        ? '環境省の公開は4月下旬〜10月下旬です'
+                        : undefined
+                    }
+                  />
+                  <Fact
+                    label="警戒以上の時間"
+                    value={`${outdoorTotals.cautionHours} 時間`}
+                    note="環境省の区分で「警戒」以上"
+                  />
+                </dl>
               </div>
             </div>
           )}
@@ -610,6 +708,132 @@ export function HomePage() {
   );
 }
 
+/**
+ * Ask the console a question in Japanese.
+ *
+ * The answer is written by a model, but the figures it is allowed to use are
+ * assembled server-side from the same Fabric tables the charts above draw, and
+ * are shown here next to the answer. That pairing is the point: an operator can
+ * check every sentence against the numbers it came from, so a fluent-sounding
+ * paragraph cannot pass for evidence on its own.
+ */
+function AskPanel() {
+  const [question, setQuestion] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [result, setResult] = useState<AskResult | null>(null);
+  const [asked, setAsked] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const available = isAskAvailable();
+
+  const submit = async (text: string) => {
+    const trimmed = text.trim();
+    if (trimmed === '' || asking) return;
+    setAsking(true);
+    setError(null);
+    setAsked(trimmed);
+    try {
+      setResult(await askConsole(trimmed));
+    } catch (e) {
+      setResult(null);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">この画面に質問する</h2>
+          <p className="text-xs text-gray-500">
+            日本語で聞くと、Azure の Model Router が答えます。読んでいるのはこの画面と同じ
+            Fabric のテーブルで、答えに使ってよい数字はサーバー側で組み立てて渡しています。
+            根拠はそのまま下に表示するので、文章と数字を突き合わせて確認できます。
+          </p>
+        </div>
+      </div>
+
+      <form
+        className="mt-4 flex flex-col gap-2 sm:flex-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit(question);
+        }}
+      >
+        <input
+          type="text"
+          value={question}
+          maxLength={400}
+          disabled={!available}
+          onChange={(e) => setQuestion(e.target.value)}
+          placeholder="例）今いちばん気にかけるべき世帯はどこ？"
+          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-500 focus:outline-none disabled:bg-gray-100"
+        />
+        <button
+          type="submit"
+          disabled={!available || asking || question.trim() === ''}
+          className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+        >
+          {asking ? '考えています…' : '質問する'}
+        </button>
+      </form>
+
+      {!available && (
+        <p className="mt-2 text-xs text-amber-700">
+          この環境では AI 分析の接続先が設定されていないため、質問を送信できません。
+        </p>
+      )}
+
+      <div className="mt-2 flex flex-wrap gap-2">
+        {SUGGESTED_QUESTIONS.map((q) => (
+          <button
+            key={q}
+            type="button"
+            disabled={!available || asking}
+            onClick={() => {
+              setQuestion(q);
+              void submit(q);
+            }}
+            className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 transition hover:border-gray-400 hover:text-gray-900 disabled:opacity-50"
+          >
+            {q}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="mt-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+          回答できませんでした: {error}
+        </div>
+      )}
+
+      {result && (
+        <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <p className="text-xs text-gray-500">質問: {asked}</p>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-900">
+            {result.answer}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+            <span className="rounded-full bg-white px-2 py-0.5 ring-1 ring-gray-200">
+              Model Router が選んだモデル: {result.model}
+            </span>
+            <span>{new Date(result.answeredAt).toLocaleString('ja-JP')} 時点</span>
+          </div>
+          <details className="mt-3">
+            <summary className="cursor-pointer text-xs font-medium text-gray-600 hover:text-gray-900">
+              この回答が使った数字（{result.evidence.length}行）
+            </summary>
+            <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-white p-3 text-[11px] leading-relaxed text-gray-700 ring-1 ring-gray-200">
+              {result.evidence.join('\n')}
+            </pre>
+          </details>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Kpi({
   label,
   value,
@@ -630,6 +854,28 @@ function Kpi({
       <div className="text-xs text-gray-500">{label}</div>
       <div className="mt-1 text-2xl font-semibold text-gray-900">{value}</div>
       <div className="text-xs text-gray-400">{sub}</div>
+    </div>
+  );
+}
+
+/**
+ * One labelled figure. `value` is a string on purpose: the callers pass 未計測
+ * for anything that was never observed, and a number type would tempt a 0.
+ */
+function Fact({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: string;
+  note?: string;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+      <dt className="text-[11px] text-gray-500">{label}</dt>
+      <dd className="mt-0.5 font-semibold text-gray-900">{value}</dd>
+      {note && <p className="mt-1 text-[10px] leading-tight text-gray-400">{note}</p>}
     </div>
   );
 }

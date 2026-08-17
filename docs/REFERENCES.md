@@ -1,4 +1,4 @@
-# 参考資料
+﻿# 参考資料
 
 以下はドキュメント作成にあたり参照した、または参照を推奨する公式資料です。可能な限り一次情報（公式ドキュメント）にリンクしていますが、リンク先の内容そのものは今回すべてを実際にアクセスして検証したわけではありません。**未検証のものには「（要確認）」を明記しています。**
 
@@ -17,22 +17,22 @@
 
 - [SwitchBot API（GitHub, OpenWonderLabs/SwitchBotAPI）](https://github.com/OpenWonderLabs/SwitchBotAPI) — v1.1 の認証方式（HMAC-SHA256署名）およびエンドポイント仕様の一次情報。**本ドキュメント内のレスポンスJSONの具体的なフィールド名は実機で未検証のため「要確認」としています**（`docs/SWITCHBOT_SETUP.md` 参照）。
 
-## OrcaRouter
+## Azure AI Foundry — Model Router
 
-- OrcaRouter の公開ドキュメントは `https://docs.orcarouter.ai/llms.txt`（LLM向け索引。各ページは末尾に `.md` を付けると生Markdownが取得できる）。`https://www.orcarouter.ai/` 側はJavaScript SPAのため、テキストとしては取得できません。
-- **2026-08-11 に実APIに対して検証済み**の事項（`src/MimamoriTai.Infrastructure/Ai/OrcaRouterClient.cs`）:
-  - ベースURL `https://api.orcarouter.ai/v1` は正しい（`https://api.orcarouter.ai/api/status` の `api_base_url` でも裏付け）。
-  - 認証は `Authorization: Bearer <ApiKey>`。エンドポイントは `POST /chat/completions` でOpenAI互換のリクエスト/レスポンス形状。
-  - レスポンスヘッダー名 `X-Orca-Router` / `X-Orca-Resolved-Model` は正しい。ただし **`orcarouter/{ルーター名}` を指定して呼んだ場合にのみ付与**され、認証エラー等の失敗応答には現れません。関連ヘッダーとして `X-Orca-Fallback-Model` / `X-Orca-Fallback-Level` / `X-Orca-Request-Id` があります（[Response Headers](https://docs.orcarouter.ai/routing/response-headers)）。
-  - モデル `orcarouter/auto` は `GET /v1/models` の一覧には**現れません**が有効です（アカウント作成時に自動生成される named router のため）。モデル一覧に無いことを根拠に「存在しない」と判断しないでください。
-  - **`response_format: {"type":"json_object"}` は Anthropic 系モデルが一切サポートしません**（[Structured Outputs](https://docs.orcarouter.ai/advanced/structured-outputs)）。`orcarouter/auto` は全モデルを候補にするため Anthropic に解決されうるので、JSONを要求する呼び出し（意図解析）では `OrcaRouter:JsonModel`（既定 `openai/gpt-4.1-mini`）にピン留めしています。
-  - フォールバックチェーンは `extra_body.models`（配列・最大5件）と `extra_body.route = "fallback"` で指定します（[Model Fallbacks](https://docs.orcarouter.ai/routing/model-fallbacks)）。`OrcaRouter:FallbackModels` がこれに対応します。
-  - レート制限（429）応答には `Retry-After`（秒）が付きます。`OrcaRouterClient` はこれを尊重しつつ `OrcaRouter:MaxRetryDelaySeconds` で上限を設けて再試行します。
-- APIキーは `https://www.orcarouter.ai/console` で発行し、**リポジトリには置かず** User Secrets（開発時）または環境変数（本番）で投入してください。
+- [Model router for Azure AI Foundry Models](https://learn.microsoft.com/azure/ai-foundry/openai/how-to/model-router) — 一次情報。
+- 実装は `src/MimamoriTai.Infrastructure/Ai/AzureModelRouterClient.cs`。ドキュメントで確認した事項:
+  - `model-router` は Azure AI Foundry にデプロイする**単一のチャットモデル**で、リクエストごとに裏で最適な基盤モデルを選びます。**基盤モデルを個別にデプロイする必要はありません。**
+  - 呼び方は **Chat Completions API と完全に同一**。`model` にデプロイ名を渡します。
+  - **レスポンスの `model` フィールドに、実際に選ばれた基盤モデル名が返ります。** ダッシュボードの「どのモデルが応答したか」はこれを記録したものです。
+  - エンドポイントは2形式あり、本実装は両対応です。`AzureModelRouter:ApiVersion` が空なら v1 形式（`{endpoint}/openai/v1/chat/completions`）、指定されていれば従来形式（`{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=...`）を使います。
+  - **`reasoning_effort` は非対応。** また o-series が選ばれた場合、`temperature` / `top_p` / `stop` などは**エラーにならず黙って無視されます**。
+  - レート制限（429）応答には `Retry-After`（秒）が付きます。`AzureModelRouterClient` はこれを尊重しつつ `AzureModelRouter:MaxRetryDelaySeconds` で上限を設けて再試行します。
+- 認証はキーまたは Microsoft Entra ID（`AzureModelRouter:UseEntraId = true`）。キーは**リポジトリには置かず** User Secrets（開発時）または Key Vault（本番）で投入してください。
 
 ```bash
 cd src/MimamoriTai.Web
-dotnet user-secrets set "OrcaRouter:ApiKey" "<発行したキー>"
+dotnet user-secrets set "AzureModelRouter:Endpoint" "<Foundry リソースのエンドポイント>"
+dotnet user-secrets set "AzureModelRouter:ApiKey" "<発行したキー>"
 ```
 
 ## LINE Messaging API

@@ -9,12 +9,12 @@ export interface RayfinClientConfig {
   localDev: boolean;
 }
 
-let client: RayfinClient<MimamoriAdminSchema> | null = null;
+type AdminClient = RayfinClient<MimamoriAdminSchema>;
+
+let client: AdminClient | null = null;
 let localDev = false;
 
-export function initRayfinClient(
-  config: RayfinClientConfig
-): RayfinClient<MimamoriAdminSchema> {
+export function initRayfinClient(config: RayfinClientConfig): AdminClient {
   if (client) {
     throw new Error('Rayfin client is already initialized.');
   }
@@ -27,7 +27,7 @@ export function initRayfinClient(
   return client;
 }
 
-export function getRayfinClient(): RayfinClient<MimamoriAdminSchema> {
+export function getRayfinClient(): AdminClient {
   if (!client) {
     throw new Error(
       'Rayfin client not initialized. Call bootstrapAuth() first.'

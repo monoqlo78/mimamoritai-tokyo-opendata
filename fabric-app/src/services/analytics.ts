@@ -4,6 +4,7 @@ import type {
   AlertRow,
   DataOrigin,
   HouseholdRow,
+  OutdoorRow,
 } from './monitoring';
 
 /** Rayfin returns datetimes as `Date`, but a rehydrated JSON payload may hand back a string. */
@@ -412,6 +413,176 @@ function toEnergy(value: string | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+export interface OutdoorPoint {
+  /** Local (JST) midnight of the day, expressed as a UTC instant for labelling. */
+  date: Date;
+  label: string;
+  /** Mean of the hourly means, in °C. Zero when the day observed nothing. */
+  avgC: number;
+  minC: number;
+  maxC: number;
+  /** Highest 暑さ指数 seen that day, or null out of season. */
+  maxWbgt: number | null;
+  /** False for a day nothing was observed, which is drawn as a gap. */
+  measured: boolean;
+}
+
+/**
+ * Daily outdoor temperature, bucketed by the household's local day.
+ *
+ * Same local-day rule as {@link dailyEnergy} for the same reason: the electricity
+ * chart and the temperature chart are read side by side, and days that started at
+ * different hours would make the pairing meaningless.
+ *
+ * A day nothing was observed stays in the series flagged unmeasured. That matters
+ * more here than for power: 0 °C is a perfectly ordinary winter reading, so a gap
+ * silently filled with zero would look like a cold snap that never happened.
+ */
+export function dailyOutdoor(
+  rows: OutdoorRow[],
+  maxDays = 30,
+  utcOffsetHours = 9
+): OutdoorPoint[] {
+  const offsetMs = utcOffsetHours * 3_600_000;
+  const byDay = new Map<
+    number,
+    { sum: number; count: number; min: number; max: number; wbgt: number | null }
+  >();
+  let min = Infinity;
+  let max = -Infinity;
+
+  for (const row of rows) {
+    const start = toDate(row.bucketStart);
+    if (Number.isNaN(start.getTime())) continue;
+
+    const mean = toMeasure(row.temperatureC);
+    if (mean === null) continue;
+
+    const local = new Date(start.getTime() + offsetMs);
+    const key = Date.UTC(
+      local.getUTCFullYear(),
+      local.getUTCMonth(),
+      local.getUTCDate()
+    );
+    min = Math.min(min, key);
+    max = Math.max(max, key);
+
+    const lo = toMeasure(row.minTemperatureC) ?? mean;
+    const hi = toMeasure(row.maxTemperatureC) ?? mean;
+    const wbgt = toMeasure(row.maxWbgt);
+
+    const day = byDay.get(key);
+    if (day === undefined) {
+      byDay.set(key, { sum: mean, count: 1, min: lo, max: hi, wbgt });
+      continue;
+    }
+
+    day.sum += mean;
+    day.count += 1;
+    day.min = Math.min(day.min, lo);
+    day.max = Math.max(day.max, hi);
+    if (wbgt !== null) day.wbgt = day.wbgt === null ? wbgt : Math.max(day.wbgt, wbgt);
+  }
+
+  if (!Number.isFinite(min)) return [];
+
+  const from = Math.max(min, max - (maxDays - 1) * 86_400_000);
+  const points: OutdoorPoint[] = [];
+
+  for (let key = from; key <= max; key += 86_400_000) {
+    const date = new Date(key);
+    const day = byDay.get(key);
+    points.push({
+      date,
+      label: `${date.getUTCMonth() + 1}/${date.getUTCDate()}`,
+      avgC: day ? day.sum / day.count : 0,
+      minC: day ? day.min : 0,
+      maxC: day ? day.max : 0,
+      maxWbgt: day ? day.wbgt : null,
+      measured: day !== undefined,
+    });
+  }
+
+  return points;
+}
+
+export interface OutdoorSummary {
+  /** Hourly rows behind the figures below. Zero means nothing has been synced yet. */
+  hours: number;
+  points: number;
+  /** Newest hour observed, or null when nothing has been synced. */
+  latestAt: Date | null;
+  latestArea: string;
+  /** Newest observed temperature in °C, or null when never observed. */
+  latestC: number | null;
+  /** Highest / lowest hourly mean across the whole window. */
+  maxC: number | null;
+  minC: number | null;
+  /** Highest 暑さ指数 in the window, or null when out of season. */
+  maxWbgt: number | null;
+  /** Hours the 環境省 band reached 警戒 (3) or above. */
+  cautionHours: number;
+}
+
+/**
+ * The one-line answer to "what has it been like outside".
+ *
+ * Every field is nullable rather than zero-defaulted: the console must be able to
+ * say 未計測 out loud. The heat band is counted from level 3 (警戒) because that is
+ * where 環境省 starts advising active avoidance, which is the point at which a
+ * family watching from far away would want to have been told.
+ */
+export function outdoorSummary(rows: OutdoorRow[]): OutdoorSummary {
+  let latestAt: Date | null = null;
+  let latestArea = '';
+  let latestC: number | null = null;
+  let maxC: number | null = null;
+  let minC: number | null = null;
+  let maxWbgt: number | null = null;
+  let cautionHours = 0;
+  const points = new Set<string>();
+
+  for (const row of rows) {
+    if (row.pointCode) points.add(row.pointCode);
+
+    const at = toDate(row.bucketStart);
+    const temp = toMeasure(row.temperatureC);
+    const wbgt = toMeasure(row.maxWbgt);
+
+    if (temp !== null) {
+      maxC = maxC === null ? temp : Math.max(maxC, temp);
+      minC = minC === null ? temp : Math.min(minC, temp);
+    }
+    if (wbgt !== null) maxWbgt = maxWbgt === null ? wbgt : Math.max(maxWbgt, wbgt);
+    if (toInt(row.heatLevel) >= 3) cautionHours += 1;
+
+    if (!Number.isNaN(at.getTime()) && (latestAt === null || at > latestAt)) {
+      latestAt = at;
+      latestArea = row.areaName;
+      latestC = temp;
+    }
+  }
+
+  return {
+    hours: rows.length,
+    points: points.size,
+    latestAt,
+    latestArea,
+    latestC,
+    maxC,
+    minC,
+    maxWbgt,
+    cautionHours,
+  };
+}
+
+/** Empty means "not observed", which is not the same as 0 °C and must not become one. */
+function toMeasure(value: string | undefined): number | null {
+  if (value === undefined || value === null || value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export interface DeviceSlice {
   id: string;
   name: string;
@@ -498,20 +669,20 @@ export function activitySummary(buckets: ActivityRow[]): ActivitySummary {
   };
 }
 
-/** The offline stub used when no OrcaRouter API key is configured. */
+/** The offline stub used when no Azure Model Router deployment is configured. */
 export const MOCK_ROUTER = 'MockAiRouter';
 
-/** Every router value except the local stub reached OrcaRouter. */
-export function viaOrcaRouter(row: AiRouterCallRow): boolean {
+/** Every router value except the local stub reached Azure Model Router. */
+export function viaModelRouter(row: AiRouterCallRow): boolean {
   return row.router !== MOCK_ROUTER;
 }
 
 /**
- * A model OrcaRouter actually served requests with.
+ * A model Azure Model Router actually served requests with.
  *
- * `autoRouted` separates the two stories the log tells: models OrcaRouter chose
- * on its own (`router = "auto"`) versus the one we pinned because the call site
- * has a deadline or needs JSON mode.
+ * The router picks the model per request, so every bar here is a model it chose;
+ * the app never names one. `purposes` is what the app did control -- which call
+ * sites ended up on that model.
  */
 export interface ModelBar {
   model: string;
@@ -519,7 +690,6 @@ export interface ModelBar {
   success: number;
   /** Call-weighted mean latency, milliseconds. */
   avgMs: number;
-  autoRouted: boolean;
   purposes: string[];
   /**
    * True for the single synthetic bar holding calls that never resolved to a
@@ -535,8 +705,8 @@ export const UNRESOLVED_BAR = '未応答（失敗）';
  * Collapses the (purpose, router, model) grain down to one bar per model, plus
  * one trailing bar for the calls that never resolved to a model.
  *
- * A call that fails before a model answers still logs `resolvedModel = "auto"`,
- * so there is no model to attribute it to. Dropping it made the bars add up to
+ * A call that fails before a model answers logs no model at all, so there is no
+ * model to attribute it to. Dropping it made the bars add up to
  * less than the call count printed above them, which reads as a miscount rather
  * than as a failure. Giving the failures their own bar means the bars total the
  * call count exactly, and the failure is visible instead of inferred.
@@ -549,7 +719,7 @@ export function routerModels(rows: AiRouterCallRow[]): ModelBar[] {
   const unresolvedPurposes: string[] = [];
 
   for (const row of rows) {
-    if (!viaOrcaRouter(row)) continue;
+    if (!viaModelRouter(row)) continue;
 
     const calls = toInt(row.callCount);
     const model = row.resolvedModel;
@@ -567,7 +737,6 @@ export function routerModels(rows: AiRouterCallRow[]): ModelBar[] {
       calls: 0,
       success: 0,
       avgMs: 0,
-      autoRouted: false,
       purposes: [],
       weighted: 0,
     };
@@ -575,7 +744,6 @@ export function routerModels(rows: AiRouterCallRow[]): ModelBar[] {
     entry.calls += calls;
     entry.success += toInt(row.successCount);
     entry.weighted += toInt(row.avgDurationMs) * calls;
-    entry.autoRouted = entry.autoRouted || row.router === 'auto';
     if (!entry.purposes.includes(row.purpose)) entry.purposes.push(row.purpose);
     byModel.set(model, entry);
   }
@@ -596,7 +764,6 @@ export function routerModels(rows: AiRouterCallRow[]): ModelBar[] {
       calls: unresolvedCalls,
       success: unresolvedSuccess,
       avgMs: Math.round(unresolvedWeighted / unresolvedCalls),
-      autoRouted: false,
       purposes: unresolvedPurposes.sort(),
       unresolved: true,
     });
@@ -606,22 +773,18 @@ export function routerModels(rows: AiRouterCallRow[]): ModelBar[] {
 }
 
 export interface RouterSummary {
-  /** Calls that went through OrcaRouter. */
+  /** Calls that went through Azure Model Router. */
   calls: number;
   success: number;
-  /** Distinct models OrcaRouter resolved to. */
+  /** Distinct models Azure Model Router resolved to. */
   models: number;
-  /** Calls OrcaRouter's own router assigned a model to. */
-  autoCalls: number;
-  /** Calls where we pinned the model up front. */
-  pinnedCalls: number;
-  autoAvgMs: number;
-  pinnedAvgMs: number;
-  /** Calls served by the offline stub, i.e. never sent to OrcaRouter. */
+  /** Call-weighted mean latency across router calls, milliseconds. */
+  avgMs: number;
+  /** Calls served by the offline stub, i.e. never sent to the router. */
   mockCalls: number;
   /**
-   * Calls that reached OrcaRouter but never resolved to a model name (a failed
-   * call still logs `resolvedModel = "auto"`). {@link routerModels} has no bar to
+   * Calls that reached the router but never resolved to a model name (a failed
+   * call is logged with no model). {@link routerModels} has no bar to
    * put these on, so without showing this number the bars silently fail to add
    * up to {@link calls} and the page looks like it is miscounting.
    */
@@ -633,10 +796,7 @@ export interface RouterSummary {
 export function routerSummary(rows: AiRouterCallRow[]): RouterSummary {
   let calls = 0;
   let success = 0;
-  let autoCalls = 0;
-  let pinnedCalls = 0;
-  let autoWeighted = 0;
-  let pinnedWeighted = 0;
+  let weighted = 0;
   let mockCalls = 0;
   let unresolvedCalls = 0;
   let lastCalledAt: Date | null = null;
@@ -645,7 +805,7 @@ export function routerSummary(rows: AiRouterCallRow[]): RouterSummary {
   for (const row of rows) {
     const count = toInt(row.callCount);
 
-    if (!viaOrcaRouter(row)) {
+    if (!viaModelRouter(row)) {
       mockCalls += count;
       continue;
     }
@@ -658,14 +818,7 @@ export function routerSummary(rows: AiRouterCallRow[]): RouterSummary {
       unresolvedCalls += count;
     }
 
-    const weighted = toInt(row.avgDurationMs) * count;
-    if (row.router === 'auto') {
-      autoCalls += count;
-      autoWeighted += weighted;
-    } else {
-      pinnedCalls += count;
-      pinnedWeighted += weighted;
-    }
+    weighted += toInt(row.avgDurationMs) * count;
 
     const called = row.lastCalledAt ? toDate(row.lastCalledAt) : null;
     if (called && !Number.isNaN(called.getTime()) && (!lastCalledAt || called > lastCalledAt)) {
@@ -677,10 +830,7 @@ export function routerSummary(rows: AiRouterCallRow[]): RouterSummary {
     calls,
     success,
     models: models.size,
-    autoCalls,
-    pinnedCalls,
-    autoAvgMs: autoCalls > 0 ? Math.round(autoWeighted / autoCalls) : 0,
-    pinnedAvgMs: pinnedCalls > 0 ? Math.round(pinnedWeighted / pinnedCalls) : 0,
+    avgMs: calls > 0 ? Math.round(weighted / calls) : 0,
     mockCalls,
     unresolvedCalls,
     lastCalledAt,
@@ -702,7 +852,7 @@ export interface PipelineStats {
   /** Most recent device event across all households, or `null` when unknown. */
   lastEvent: Date | null;
   lastSync: Date | null;
-  /** Calls routed through OrcaRouter, and how many distinct models it resolved to. */
+  /** Calls routed through Azure Model Router, and how many distinct models it resolved to. */
   aiCalls: number;
   aiModels: number;
   /**
@@ -714,10 +864,8 @@ export interface PipelineStats {
    * count here lets the diagram state both numbers instead of implying one.
    */
   aiResolvedCalls: number;
-  /** Of `aiCalls`, the subset OrcaRouter itself picked a model for. */
-  aiAutoCalls: number;
-  aiAutoAvgMs: number;
-  aiPinnedAvgMs: number;
+  /** Call-weighted mean router latency, milliseconds. */
+  aiAvgMs: number;
   /** Where the rendered rows came from. Drives the console node's label. */
   origin: DataOrigin;
 }
@@ -764,9 +912,7 @@ export function pipelineStats(
     aiCalls: ai.calls,
     aiModels: ai.models,
     aiResolvedCalls: ai.calls - ai.unresolvedCalls,
-    aiAutoCalls: ai.autoCalls,
-    aiAutoAvgMs: ai.autoAvgMs,
-    aiPinnedAvgMs: ai.pinnedAvgMs,
+    aiAvgMs: ai.avgMs,
     origin,
   };
 }

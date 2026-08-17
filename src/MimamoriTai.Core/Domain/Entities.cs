@@ -243,11 +243,11 @@ public class AiRequestLog
     /// </summary>
     /// <remarks>
     /// Recording only <see cref="Success"/> made failures unexplainable after the
-    /// fact: a call logged as failed with <see cref="ResolvedModel"/> still "auto"
-    /// says a model never answered but not why, and the app log that did say why
+    /// fact: a call logged as failed carries no <see cref="ResolvedModel"/> at all,
+    /// which says a model never answered but not why, and the app log that did say why
     /// had already rotated away by the time anyone asked. This is the router's
-    /// short reason ("OrcaRouter returned 401.", an exception type name), never a
-    /// response body, which can echo the prompt.
+    /// short reason ("Azure Model Router returned 401.", an exception type name), never
+    /// a response body, which can echo the prompt.
     /// </remarks>
     public string? Error { get; set; }
 

@@ -9,7 +9,7 @@ namespace MimamoriTai.Web.Services;
 ///
 /// Before this existed the only way anything reached Fabric SQL was a human running
 /// <c>fabric-app/scripts/sync-to-fabric.ps1</c>, so the console showed whatever the last
-/// manual run captured and the "OrcaRouter calls" figure sat still for days. This is the
+/// manual run captured and the "Model Router calls" figure sat still for days. This is the
 /// scheduled replacement.
 ///
 /// Follows the same contract as the other publishers here: a cheap no-op when

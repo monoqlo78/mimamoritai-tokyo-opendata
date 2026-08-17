@@ -17,8 +17,9 @@ public sealed record AiMessage(string Role, string Content)
 }
 
 /// <summary>
-/// Chat completion abstraction. Backed by OrcaRouter when an API key is configured,
-/// otherwise by a deterministic mock so the whole app stays demoable.
+/// Chat completion abstraction. Backed by Azure AI Foundry's model router when an
+/// endpoint is configured, otherwise by a deterministic mock so the whole app stays
+/// demoable.
 /// </summary>
 public interface IAiRouterClient
 {

@@ -255,12 +255,12 @@ public class AssistantKnowledgeTests
     }
 
     [Fact]
-    public void The_Fast_Purpose_Actually_Resolves_To_The_Pinned_Fast_Model()
+    public void The_Fast_Purpose_Actually_Resolves_To_The_Shorter_Budget()
     {
-        var options = new OrcaRouterOptions();
+        var options = new AzureModelRouterOptions();
 
-        Assert.Equal(options.FastModel, options.ResolveModel(jsonMode: false, "conversation-fast"));
-        Assert.Equal(options.Model, options.ResolveModel(jsonMode: false, "conversation"));
+        Assert.Equal(TimeSpan.FromSeconds(options.FastTimeoutSeconds), options.ResolveTimeout("conversation-fast"));
+        Assert.Equal(TimeSpan.FromSeconds(options.TimeoutSeconds), options.ResolveTimeout("conversation"));
     }
 
     [Fact]

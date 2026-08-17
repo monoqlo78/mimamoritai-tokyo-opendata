@@ -607,7 +607,7 @@ else
                 <h3>接続状況</h3>
                 <div class="integrations">
                     <span class="chip @(_model.Integrations.SwitchBotConfigured ? "on" : "mock")">データ @(_model.Integrations.SwitchBotConfigured ? "実機" : "デモ")</span>
-                    <span class="chip @(_model.Integrations.OrcaRouterConfigured ? "on" : "mock")">AI @(_model.Integrations.OrcaRouterConfigured ? "接続済み" : "モック")</span>
+                    <span class="chip @(_model.Integrations.ModelRouterConfigured ? "on" : "mock")">AI @(_model.Integrations.ModelRouterConfigured ? "接続済み" : "モック")</span>
                     <span class="chip @(_model.Integrations.FabricConfigured ? "on" : "mock")">Fabric @(_model.Integrations.FabricConfigured ? "接続済み" : "ローカル")</span>
                     <span class="chip @(_model.Integrations.LineConfigured ? "on" : "mock")">LINE @(_model.Integrations.LineConfigured ? "接続済み" : "モック")</span>
                 </div>

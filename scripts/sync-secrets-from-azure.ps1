@@ -3,7 +3,7 @@
     Azure App Service のアプリ設定をローカルの User Secrets へ同期します。
 
 .DESCRIPTION
-    ローカル開発でも本番と同じ LINE / OrcaRouter / Fabric / Eventhouse の資格情報を使えるようにします。
+    ローカル開発でも本番と同じ LINE / Azure Model Router / Fabric / Eventhouse の資格情報を使えるようにします。
     値は画面に表示せず、キー名と文字数だけを報告します。
 
     このスクリプトは 見守り隊 のリソースグループのみを参照します。

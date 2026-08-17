@@ -16,7 +16,7 @@ MimamoriTai.Web  ──depends on──>  MimamoriTai.Infrastructure  ──depe
   - `Data/`: `AppDbContext`（`IAppDbContext` 実装）、`AppDbContextFactory`（デザインタイム用）、`DemoDataSeeder`。
   - `Devices/`: `ISwitchBotClient` の実装 `SwitchBotClient`、`IDeviceProvider` の実装 `SwitchBotDeviceProvider` と `MockDeviceProvider`、`IDeviceProviderFactory` の実装 `DeviceProviderFactory`、両者を束ねて `IDataSourceContext.Mode` に応じて実体を選択する `DataSourceAwareDeviceProvider`（`IDeviceProvider` として登録される実体はこれ）。
   - `Auth/`: `ICurrentUserAccessor` の既定実装 `DevCurrentUserAccessor`（固定デモユーザーを返す。詳細は下記）。
-  - `Ai/`: `IAiRouterClient` の実装 `OrcaRouterClient` と `MockAiRouterClient`。
+  - `Ai/`: `IAiRouterClient` の実装 `AzureModelRouterClient` と `MockAiRouterClient`。
   - `Fabric/`: `IFabricDataAgentClient` の実装として `MockFabricDataAgentClient`（未設定時、常に `IsConfigured = false`）と `FabricDataAgentMcpClient`（実MCPクライアント。JSON-RPC 2.0でFabric Data AgentのMCPエンドポイントに `initialize` → `notifications/initialized` → `tools/list` → `tools/call` の順で問い合わせ、`application/json`/SSE(`text/event-stream`)どちらのレスポンスも解釈する。認証は`Azure.Identity`の`TokenCredential`を`EventhouseStreamPublisher`と共用）。`IEventStreamPublisher` の実装 `EventHubEventStreamPublisher`（Eventstream の Event Hub カスタムエンドポイントへ送る主経路）、`EventhouseStreamPublisher`（Eventhouseへの直接ストリーミング取り込み。上の失敗時のフォールバック）、両者を束ねる `FallbackEventStreamPublisher`、および `MockEventStreamPublisher`。
   - `Line/`: `ILineMessagingClient` の実装 `LineMessagingClient` と `MockLineMessagingClient`、および共有の `LineSignature`（HMAC検証）。
   - `ServiceCollectionExtensions.cs`: **すべての実装／モックの選択ロジックがここに集約されている**唯一の場所。
@@ -36,7 +36,7 @@ MimamoriTai.Web  ──depends on──>  MimamoriTai.Infrastructure  ──depe
 | インターフェース | 設定が無い場合 | 設定がある場合 |
 |---|---|---|
 | `IDeviceProvider` | `MockDeviceProvider`（`SwitchBotOptions.IsConfigured` が false の時に登録） | `SwitchBotDeviceProvider`（`SwitchBotOptions.IsConfigured` が true の時のみ登録） |
-| `IAiRouterClient` | `MockAiRouterClient` | `OrcaRouterClient`（`OrcaRouterOptions.IsConfigured` が true の時のみ登録） |
+| `IAiRouterClient` | `MockAiRouterClient` | `AzureModelRouterClient`（`AzureModelRouterOptions.IsConfigured` が true の時のみ登録） |
 | `IFabricDataAgentClient` | `MockFabricDataAgentClient`（`FabricOptions.IsConfigured` が false の時に登録） | `FabricDataAgentMcpClient`（`FabricOptions.IsConfigured` が true の時のみ登録。MCP/JSON-RPC経由でFabric Data Agentに接続） |
 | `IEventStreamPublisher` | `MockEventStreamPublisher`（`EventStream`・`Eventhouse` どちらも未設定の時に登録） | 両方設定済みなら `FallbackEventStreamPublisher`（主経路 `EventHubEventStreamPublisher` → 失敗時のみ `EventhouseStreamPublisher`）。片方だけならその実装単体 |
 | `IPlugMiniReadingStreamPublisher` | `MockPlugMiniReadingStreamPublisher`（`EventhouseOptions.IsConfigured` が false の時に登録） | `EventhousePlugMiniReadingStreamPublisher`（`EventhouseOptions.IsConfigured` が true の時のみ登録。`DeviceEvents` とは別テーブル `SwitchBotPlugReadings` へ送信、詳細は `docs/FABRIC_SETUP.md`） |

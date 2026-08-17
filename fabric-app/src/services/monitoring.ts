@@ -73,10 +73,9 @@ export interface ActivityRow {
 /**
  * One (purpose, router, resolvedModel) group of AI calls.
  *
- * `router` is the X-Orca-Router response header recorded by OrcaRouterClient:
- *  - "auto"        OrcaRouter's own router chose the model for us
- *  - "OrcaRouter"  no header, i.e. we pinned the model on that call site
- *  - "MockAiRouter" the offline stub -- the only value that did not reach OrcaRouter
+ * `router` is the client that served the call, recorded by AzureModelRouterClient:
+ *  - "Azure Model Router" the router deployment chose the model for that request
+ *  - "MockAiRouter" the offline stub -- the only value that did not reach the router
  */
 export interface AiRouterCallRow {
   id: string;
@@ -87,6 +86,28 @@ export interface AiRouterCallRow {
   successCount: string;
   avgDurationMs: string;
   lastCalledAt: Date;
+}
+
+/**
+ * One hour of public outdoor observation for one 観測地点 (環境省 WBGT / 気象庁 AMeDAS).
+ *
+ * Every measurement is a string that may be empty. Empty means "not observed",
+ * which is never the same as a measured zero -- 0 °C is an ordinary winter reading,
+ * and WBGT is simply not published outside late April to late October.
+ */
+export interface OutdoorRow {
+  id: string;
+  pointCode: string;
+  areaName: string;
+  bucketStart: Date;
+  temperatureC: string;
+  minTemperatureC: string;
+  maxTemperatureC: string;
+  humidityPercent: string;
+  maxWbgt: string;
+  heatLevel: string;
+  coldLevel: string;
+  sampleCount: string;
 }
 
 const HOUSEHOLD_FIELDS = [
@@ -146,6 +167,21 @@ const AI_FIELDS = [
   'successCount',
   'avgDurationMs',
   'lastCalledAt',
+] as const;
+
+const OUTDOOR_FIELDS = [
+  'id',
+  'pointCode',
+  'areaName',
+  'bucketStart',
+  'temperatureC',
+  'minTemperatureC',
+  'maxTemperatureC',
+  'humidityPercent',
+  'maxWbgt',
+  'heatLevel',
+  'coldLevel',
+  'sampleCount',
 ] as const;
 
 // Local-dev fallback. `rayfin up` has not provisioned a Fabric SQL database
@@ -270,7 +306,7 @@ const SAMPLE_ACTIVITY: ActivityRow[] = (() => {
 
 /**
  * Local-dev sample router traffic. Every row is MockAiRouter on purpose: with no
- * OrcaRouter API key configured, that is exactly what the Blazor app records, so
+ * Model Router deployment configured, that is exactly what the Blazor app records, so
  * the fixture cannot be mistaken for evidence of real routing.
  */
 const SAMPLE_AI_CALLS: AiRouterCallRow[] = [
@@ -409,6 +445,52 @@ export async function getActivity(limit = 2000): Promise<ActivityRow[]> {
     );
 }
 
+/**
+ * Local-dev sample outdoor observations: one point, a synthetic daily swing, so the
+ * temperature chart has shape before a Fabric backend exists. Labelled 'sample' as the
+ * point code for the same reason SAMPLE_ACTIVITY uses source 'Sample' -- it must never
+ * be mistaken for a 気象庁 / 環境省 observation.
+ *
+ * WBGT is left empty outside the warm hours rather than computed, because the real
+ * series is published, not derived, and inventing one here would teach the chart to
+ * draw a number the source never issued.
+ */
+const SAMPLE_OUTDOOR: OutdoorRow[] = (() => {
+  const rows: OutdoorRow[] = [];
+  const start = new Date();
+  start.setUTCHours(0, 0, 0, 0);
+
+  for (let day = 6; day >= 0; day -= 1) {
+    for (let hour = 0; hour < 24; hour += 1) {
+      const bucket = new Date(start);
+      bucket.setUTCDate(bucket.getUTCDate() - day);
+      bucket.setUTCHours(hour);
+
+      // Coolest before dawn, warmest mid-afternoon (JST ~14:00 = 05:00 UTC).
+      const swing = Math.cos(((hour - 5 + 24) % 24) * (Math.PI / 12));
+      const temp = 26 + swing * 6;
+      const warm = temp >= 28;
+
+      rows.push({
+        id: `sample-outdoor-${day}-${hour}`,
+        pointCode: 'sample',
+        areaName: 'サンプル地点',
+        bucketStart: bucket,
+        temperatureC: temp.toFixed(1),
+        minTemperatureC: (temp - 0.6).toFixed(1),
+        maxTemperatureC: (temp + 0.6).toFixed(1),
+        humidityPercent: (72 - swing * 12).toFixed(0),
+        maxWbgt: warm ? (temp - 2.5).toFixed(1) : '',
+        heatLevel: warm ? (temp >= 31 ? '4' : '3') : '0',
+        coldLevel: '0',
+        sampleCount: '6',
+      });
+    }
+  }
+
+  return rows;
+})();
+
 /** AI router traffic, busiest group first. */
 export async function getAiRouterCalls(): Promise<AiRouterCallRow[]> {
   if (isLocalBackend()) {
@@ -426,6 +508,40 @@ export async function getAiRouterCalls(): Promise<AiRouterCallRow[]> {
   return rows
     .slice()
     .sort((a, b) => Number(b.callCount || 0) - Number(a.callCount || 0));
+}
+
+/**
+ * Hourly outdoor observations, oldest first.
+ *
+ * Unlike the other reads this does not fall back to the bundled snapshot. The table
+ * is newer than the deployment, so an empty result is the ordinary "the sync has not
+ * written any weather yet" state, and flipping the whole console's origin badge to
+ * "snapshot" over it would misreport where every other figure came from. An empty
+ * list reaches the UI as 未計測, which is the truth.
+ */
+export async function getOutdoor(limit = 2000): Promise<OutdoorRow[]> {
+  if (isLocalBackend()) {
+    dataOrigin = 'sample';
+    return [...SAMPLE_OUTDOOR].slice(-limit);
+  }
+
+  let rows: OutdoorRow[] = [];
+  try {
+    const client = getRayfinClient();
+    rows = (await client.data.OutdoorReading.select([...OUTDOOR_FIELDS])
+      .orderBy({ bucketStart: 'desc' })
+      .first(limit)
+      .execute()) as unknown as OutdoorRow[];
+  } catch (error) {
+    console.warn('Outdoor read failed; the console will show 未計測', error);
+    return [];
+  }
+
+  return rows
+    .slice()
+    .sort(
+      (a, b) => new Date(a.bucketStart).getTime() - new Date(b.bucketStart).getTime()
+    );
 }
 
 /** Households needing attention first, then by name, so triage is the default view. */

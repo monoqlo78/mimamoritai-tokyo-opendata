@@ -431,6 +431,71 @@ public class FabricConsoleSyncTests
         Assert.Equal(0, failed.SuccessCount);
     }
 
+    [Fact]
+    public async Task Outdoor_Observations_Roll_Up_By_Point_And_Hour_Without_Inventing_Readings()
+    {
+        using var db = await new TestDb().SeedAsync();
+
+        var hour = new DateTimeOffset(2026, 1, 15, 3, 0, 0, TimeSpan.Zero);
+
+        db.Context.HeatReadings.AddRange(
+            Heat("44132", "東京", hour.AddMinutes(0), 30.0, 60, 28.0, level: 3, cold: 0),
+            Heat("44132", "東京", hour.AddMinutes(30), 34.0, 70, 31.0, level: 4, cold: 0),
+
+            // Same point, next hour: must not be folded into the bucket above.
+            Heat("44132", "東京", hour.AddHours(1), 33.0, 65, 30.0, level: 4, cold: 0),
+
+            // Winter row from another point: WBGT is out of season, so it stays unmeasured
+            // rather than becoming a 0 the console would draw as "comfortable".
+            Heat("44136", "八王子", hour.AddMinutes(10), 1.0, 40, null, level: 0, cold: 2),
+
+            // Outside the activity window: dropped like every other rollup.
+            Heat("44132", "東京", Now.AddDays(-90), 20.0, 50, 19.0, level: 1, cold: 0));
+        await db.Context.SaveChangesAsync();
+
+        var snapshot = await CreateSync(db).BuildSnapshotAsync(CancellationToken.None);
+
+        Assert.Equal(3, snapshot.Outdoor.Count);
+
+        var tokyo = snapshot.Outdoor.Single(o => o.PointCode == "44132" && o.BucketStart == hour.UtcDateTime);
+        Assert.Equal("東京", tokyo.AreaName);
+        Assert.Equal(32.0, tokyo.TemperatureC!.Value, 3);
+        Assert.Equal(30.0, tokyo.MinTemperatureC!.Value, 3);
+        Assert.Equal(34.0, tokyo.MaxTemperatureC!.Value, 3);
+        Assert.Equal(65.0, tokyo.HumidityPercent!.Value, 3);
+
+        // The peak, not the mean: the warning a family sees is about the worst moment.
+        Assert.Equal(31.0, tokyo.MaxWbgt!.Value, 3);
+        Assert.Equal(4, tokyo.HeatLevel);
+        Assert.Equal(2, tokyo.SampleCount);
+
+        var hachioji = snapshot.Outdoor.Single(o => o.PointCode == "44136");
+        Assert.Null(hachioji.MaxWbgt);
+        Assert.Equal(0, hachioji.HeatLevel);
+        Assert.Equal(2, hachioji.ColdLevel);
+        Assert.Equal(1.0, hachioji.TemperatureC!.Value, 3);
+    }
+
+    private static HeatReading Heat(
+        string pointCode,
+        string areaName,
+        DateTimeOffset observedAt,
+        double? temperatureC,
+        double? humidity,
+        double? wbgt,
+        int level,
+        int cold) => new()
+        {
+            PointCode = pointCode,
+            AreaName = areaName,
+            ObservedAtUtc = observedAt,
+            TemperatureC = temperatureC,
+            HumidityPercent = humidity,
+            Wbgt = wbgt,
+            Level = level,
+            ColdLevel = cold,
+        };
+
     private static AiRequestLog Log(
         string purpose, string router, string model, int durationMs, bool success, DateTimeOffset at) => new()
         {

@@ -7,6 +7,7 @@ import type {
   HeatmapCell,
   HouseholdBar,
   ModelBar,
+  OutdoorPoint,
   RiskSlice,
 } from '@/services/analytics';
 
@@ -15,6 +16,92 @@ export function formatWh(wh: number): string {
   return wh >= 1000
     ? `${(wh / 1000).toFixed(2)}kWh`
     : `${wh >= 10 ? Math.round(wh) : wh.toFixed(1)}Wh`;
+}
+
+/** One decimal, because that is the resolution 気象庁 actually publishes. */
+export function formatC(c: number): string {
+  return `${c.toFixed(1)}℃`;
+}
+
+/**
+ * Daily outdoor temperature, drawn as a min-max band with the mean marked.
+ *
+ * A band rather than a line: heatstroke risk is about the day's peak, and a mean
+ * of 26℃ hides an afternoon that touched 35℃. Days with no observation are drawn
+ * as a hatched gap for the same reason the energy chart does -- 0℃ is a real
+ * winter reading, so a zeroed gap would look like a cold snap that never happened.
+ */
+export function OutdoorTrend({ points }: { points: OutdoorPoint[] }) {
+  if (points.length === 0) {
+    return <p className="text-sm text-gray-400">気温のデータがまだありません。</p>;
+  }
+
+  const measured = points.filter((point) => point.measured);
+  if (measured.length === 0) {
+    return <p className="text-sm text-gray-400">気温のデータがまだありません。</p>;
+  }
+
+  // Pad the scale so a flat week still has a visible band instead of a hairline.
+  const lo = Math.min(...measured.map((point) => point.minC)) - 1;
+  const hi = Math.max(...measured.map((point) => point.maxC)) + 1;
+  const span = Math.max(1, hi - lo);
+  const labelEvery = Math.max(1, Math.ceil(points.length / 10));
+
+  return (
+    <div>
+      <div className="relative flex h-36 items-stretch gap-[3px]">
+        {points.map((point) => {
+          // Warmer days sit further along the amber-to-red ramp, matching the
+          // colour language the 環境省 bands already use elsewhere on this page.
+          const warmth = Math.min(1, Math.max(0, (point.maxC - lo) / span));
+          const bottom = ((point.minC - lo) / span) * 100;
+          const height = ((point.maxC - point.minC) / span) * 100;
+
+          return (
+            <div key={point.date.toISOString()} className="relative h-full flex-1">
+              {point.measured ? (
+                <>
+                  <div
+                    className="absolute inset-x-0 rounded-[3px] transition-[height] duration-700"
+                    style={{
+                      bottom: `${bottom}%`,
+                      height: `${Math.max(height, 4)}%`,
+                      background: `linear-gradient(180deg, hsl(${34 - warmth * 30} 92% ${64 - warmth * 12}%), hsl(${44 - warmth * 30} 88% ${76 - warmth * 14}%))`,
+                    }}
+                    title={`${point.label}: ${formatC(point.minC)}〜${formatC(point.maxC)}（平均 ${formatC(point.avgC)}）${
+                      point.maxWbgt === null ? '' : ` / 暑さ指数 最高 ${point.maxWbgt.toFixed(1)}`
+                    }`}
+                  />
+                  <div
+                    className="absolute inset-x-0 h-[2px] bg-white/80"
+                    style={{ bottom: `${((point.avgC - lo) / span) * 100}%` }}
+                  />
+                </>
+              ) : (
+                <div
+                  className="absolute inset-0 rounded-[3px]"
+                  style={{
+                    background:
+                      'repeating-linear-gradient(135deg, #f1f5f9 0 4px, #ffffff 4px 8px)',
+                  }}
+                  title={`${point.label}: 未計測`}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-1.5 flex gap-[3px] text-[10px] text-gray-400">
+        {points.map((point, index) => (
+          <span key={point.date.toISOString()} className="flex-1 text-center">
+            {index % labelEvery === 0 || index === points.length - 1
+              ? point.label
+              : ''}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -502,7 +589,7 @@ export function DeviceBreakdown({ slices }: { slices: DeviceSlice[] }) {
 }
 
 /**
- * Which models OrcaRouter actually served requests with.
+ * Which models Azure Model Router actually served requests with.
  *
  * Two bars per model on purpose: the call bar shows how much traffic the model
  * took, the latency bar shows what it cost. The rows deliberately carry no

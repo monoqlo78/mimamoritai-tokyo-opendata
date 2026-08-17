@@ -1,11 +1,11 @@
-# セキュリティ方針
+﻿# セキュリティ方針
 
 ## 秘密情報の取り扱い
 
 - **すべての秘密情報（APIキー、トークン、接続文字列）は `dotnet user-secrets` またはホスティング環境の環境変数／シークレットストアからのみ供給します。**
 - **本番（Azure App Service）では Azure Key Vault を唯一のシークレット供給元とし、App Service のアプリケーション設定に秘密情報を1件も置きません。**（下記「本番のシークレット供給（Key Vault + マネージドID）」参照）
-- `src/MimamoriTai.Web/appsettings.json` および `appsettings.Development.json` には、対象キー（`ConnectionStrings:AppDb`, `OrcaRouter:ApiKey`, `Line:ChannelAccessToken`, `Line:ChannelSecret`, `Line:AlertToId`, `SwitchBot:Token`, `SwitchBot:Secret`, `Fabric:WorkspaceId`, `Fabric:DataAgentId`, `Fabric:McpUrl`）は**空文字列のプレースホルダーとしてのみ**存在し、実際の値をコミットしてはいけません。
-- 各オプションクラス（`OrcaRouterOptions`, `SwitchBotOptions`, `LineOptions`, `FabricOptions`）は `IsConfigured` プロパティを持ち、必須項目が埋まっていない場合は自動的にモック実装へフォールバックします（`ServiceCollectionExtensions.cs`）。これにより、秘密情報が無い状態で誤って実サービスへ接続しようとすることを防いでいます。
+- `src/MimamoriTai.Web/appsettings.json` および `appsettings.Development.json` には、対象キー（`ConnectionStrings:AppDb`, `AzureModelRouter:ApiKey`, `Line:ChannelAccessToken`, `Line:ChannelSecret`, `Line:AlertToId`, `SwitchBot:Token`, `SwitchBot:Secret`, `Fabric:WorkspaceId`, `Fabric:DataAgentId`, `Fabric:McpUrl`）は**空文字列のプレースホルダーとしてのみ**存在し、実際の値をコミットしてはいけません。
+- 各オプションクラス（`AzureModelRouterOptions`, `SwitchBotOptions`, `LineOptions`, `FabricOptions`）は `IsConfigured` プロパティを持ち、必須項目が埋まっていない場合は自動的にモック実装へフォールバックします（`ServiceCollectionExtensions.cs`）。これにより、秘密情報が無い状態で誤って実サービスへ接続しようとすることを防いでいます。
 - Microsoft Fabricの認証は、コード内に静的なシークレットを置かず `Azure.Identity`（`DefaultAzureCredential`）を利用します（`docs/FABRIC_SETUP.md` 参照）。同じマネージドIDで Key Vault からシークレットを読み出します。
 - **重要: ローカル開発の User Secrets（`SwitchBot:Token`/`SwitchBot:Secret` など）は本番環境へ一切転記・移行しません。** 本番では各世帯のオーナーが自分のSwitchBot Token/Secretを「LINE連携設定」画面（`/settings/switchbot`）から個別に入力し、世帯ごとに暗号化して保存します（下記「世帯ごとのSwitchBot認証情報」参照）。User Secretsのグローバル `SwitchBot:Token`/`Secret` はローカル開発のブートストラップ専用の経路として残していますが、`SwitchBot:AllowGlobalFallback=true` を明示しない限り本番相当の設定では使われません。
 
@@ -16,7 +16,7 @@
 - **実装**: `AddMimamoriTaiKeyVault()`（`src/MimamoriTai.Web/Services/KeyVaultConfigurationExtensions.cs`）を `Program.cs` の先頭で呼び出します。`KeyVault:Uri` が設定されているときだけ `DefaultAzureCredential` で `SecretClient` を作り、`builder.Configuration.AddAzureKeyVault()` で構成に重ねます。
 - **認証はパスワードレス**: App Service のシステム割り当てマネージドIDに Key Vault の `Key Vault Secrets User` ロールを付与しています。**Key Vault へ接続するための資格情報そのものが存在しません。** ローカル開発では同じ `DefaultAzureCredential` が開発者のログイン（Azure CLI / Visual Studio）を拾います。
 - **ゼロコンフィグは維持**: `KeyVault:Uri` が空（`appsettings.json` の既定）ならプロバイダーは追加されず、何も起きません。`git clone` して `dotnet run` するだけでモック実装で全機能が動く、という前提は変わりません。
-- **シークレット名の変換規則**: Key Vault のシークレット名にはコロンを使えないため、既定の `KeyVaultSecretManager` は **`--` を構成階層の `:` に読み替えます**。つまり `OrcaRouter:ApiKey` に対応するシークレット名は **`OrcaRouter--ApiKey`** です（App Service のアプリ設定で使う `__` とは別の記法なので注意）。
+- **シークレット名の変換規則**: Key Vault のシークレット名にはコロンを使えないため、既定の `KeyVaultSecretManager` は **`--` を構成階層の `:` に読み替えます**。つまり `AzureModelRouter:ApiKey` に対応するシークレット名は **`AzureModelRouter--ApiKey`** です（App Service のアプリ設定で使う `__` とは別の記法なので注意）。
 - **反映**: `ReloadInterval` は30分です。シークレットをローテーションしても、再デプロイなしで最大30分後に反映されます。
 - **監査**: Key Vault 側にアクセスログが残るため、「どのIDがいつどのシークレットを読んだか」を後から追跡できます。アプリ設定に平文で置く方式では得られない性質です。
 

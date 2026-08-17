@@ -15,9 +15,10 @@ public sealed record FabricConsoleSyncResult(
     int ActivityBuckets,
     int AiRouterCalls,
     long DurationMs,
-    string? Error)
+    string? Error,
+    int OutdoorReadings = 0)
 {
-    public int TotalRows => Households + Alerts + ActivityBuckets + AiRouterCalls;
+    public int TotalRows => Households + Alerts + ActivityBuckets + AiRouterCalls + OutdoorReadings;
 
     public static FabricConsoleSyncResult Failed(string error, long durationMs) =>
         new(false, 0, 0, 0, 0, durationMs, error);

@@ -435,7 +435,7 @@ public sealed class AssistantOrchestrator(
     /// figure in the warehouse to reach for, that summary kept coming back as "家電を◯回
     /// 利用しています", which then survived into the reply. So it is asked for the
     /// measurements only; the wording, the judgement and the reassurance are decided here,
-    /// from the same facts, by the model behind OrcaRouter.
+    /// from the same facts, by the model the router selected.
     /// </summary>
     private const string FactsOnlyPreamble = """
         以下の質問に対して、集計されたファクト（数値・時刻・状態）だけを簡潔に列挙してください。
@@ -542,12 +542,12 @@ public sealed class AssistantOrchestrator(
     /// <summary>
     /// Marks the summary request as deadline-bound when it came from LINE.
     ///
-    /// LINE cancels an event after 8 seconds, so that path needs a model whose
-    /// latency is predictable. Every other entry point (web UI, API) has no such
-    /// limit and keeps the auto router, which is the whole point of routing through
-    /// OrcaRouter and is surfaced to the user as the resolved model name. The
-    /// suffix is interpreted by OrcaRouterOptions.ResolveModel; a client that does
-    /// not pin a fast model simply ignores it.
+    /// LINE cancels an event after 8 seconds, so that path needs a bounded latency.
+    /// Every other entry point (web UI, API) has no such limit and lets the router
+    /// take as long as the best model needs, which is the whole point of routing
+    /// through Azure Model Router and is surfaced to the user as the resolved model
+    /// name. The suffix is interpreted by AzureModelRouterOptions.ResolveTimeout; a
+    /// client that has no separate fast budget simply ignores it.
     /// </summary>
     private static string SummaryPurpose(CommandSource source) =>
         source == CommandSource.Line ? "summary-fast" : "summary";
@@ -726,11 +726,11 @@ public sealed class AssistantOrchestrator(
     /// Marks small talk as deadline-bound when it came from LINE, exactly as
     /// <see cref="SummaryPurpose"/> does for summaries.
     ///
-    /// Measured on the live router, "orcarouter/auto" sends this path to reasoning models
-    /// (qwen3.7-plus 6.2s, deepseek-v4-pro 5.1s, glm-5.2 12.6s). Added to the ~1.7s intent
-    /// call, that exceeds the webhook's 8s budget, which is what turned every question into
-    /// the generic "しばらくたってからお試しください" message. The web UI keeps the auto
-    /// router: it has no deadline, and showing which provider answered is the point.
+    /// Measured on the live router, small talk is routinely sent to reasoning models that
+    /// think for 5-13 seconds. Added to the ~1.7s intent call, that exceeds the webhook's
+    /// 8s budget, which is what turned every question into the generic
+    /// "しばらくたってからお試しください" message. The web UI keeps the full budget: it has
+    /// no deadline, and showing which model answered is the point.
     /// </summary>
     private static string ConversationPurpose(CommandSource source) =>
         source == CommandSource.Line ? "conversation-fast" : "conversation";
