@@ -65,12 +65,12 @@ for idx, budget, text in rows:
     d = synth(text, rate, dest)
     tries = 0
     while d > target and tries < 6:
-        # speed up just enough, in 4% steps
-        rate -= max(4, int(round((d / target - 1) * 100 / 2)))
-        rate = max(rate, -40)
+        # SSML の rate は正で速く、負で遅くなる。尺に収めるので正方向へ寄せる。
+        rate += max(4, int(round((d / target - 1) * 100 / 2)))
+        rate = min(rate, 40)
         d = synth(text, rate, dest)
         tries += 1
-        if rate <= -40:
+        if rate >= 40:
             break
     report.append((idx, budget, round(d, 2), rate, "OK" if d <= budget else "OVER"))
 

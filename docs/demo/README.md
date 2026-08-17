@@ -2,6 +2,8 @@
 
 **[mimamoritai-demo.mp4](mimamoritai-demo.mp4)** — 3分11秒 / 1920x1080 / 24fps / 8.8MB / 日本語字幕 + 日本語ナレーション入り
 
+**[mascot.mp4](mascot.mp4)** — 3.8秒 / ナレーション入り。LINE のトーク内に出るマスコットの短いクリップです（「お母さんの今日は、いつもどおりです。」）。
+
 本番環境（Azure App Service）を実際に操作して画面録画したものです。うまくいくところだけを繋いだのではなく、**AI が実行前に安全確認を求めて止まる瞬間もそのまま**入れてあります。
 
 ナレーションは **Azure AI Speech の Text to Speech**（`ja-JP-NanamiNeural`）で合成し、読み上げた内容が原稿どおりかを **同じ Azure AI Speech の Speech to Text で聞き直して検証**しています。音を出せない環境でも困らないよう、字幕だけで内容が追えるようにしてあります。
@@ -50,3 +52,7 @@ python stt_verify.py  # 動画 -> 文字起こし -> 原稿と比較
 ```
 
 `stt_verify.py` は 15 場面すべてを照合します。`AI` や `Microsoft Fabric` は原稿にひらがなで書いてある（そう読ませたいため）ので、文字列としては一致しませんが、**音としては正しく読めている**ことの確認になります。
+
+短いクリップ（`mascot.mp4` など）も同じ手順です。合成した wav を ffmpeg で映像へ多重化し、できあがった動画から音を戻して Speech to Text で読み直して確認しています。
+
+> 以前ここに置いていた `dataflow.mp4` は削除しました。AI ルーターを Azure Model Router へ移行する前の画面で、旧名称と当時の接続エラーがそのまま映っていたためです。現在の構成図は [../ARCHITECTURE.md](../ARCHITECTURE.md) を参照してください。
