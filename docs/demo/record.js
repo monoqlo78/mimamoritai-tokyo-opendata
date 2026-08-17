@@ -71,7 +71,7 @@ function mark(name) { scenes.push({ name, startMs: Math.round(Date.now() - t0) }
 
   t0 = Date.now();
 
-  mark('01'); await p.waitForTimeout(8000);
+  mark('01'); await p.waitForTimeout(11000);
 
   // 運用コンソール（Microsoft Fabric 上でホストしている Rayfin アプリ）。
   // 収録モードでは Fabric のサインインを通さず、本番データベースから抽出した
@@ -128,7 +128,38 @@ function mark(name) { scenes.push({ name, startMs: Math.round(Date.now() - t0) }
   }
 
   mark('11'); await go('家の中の様子', -150); await p.waitForTimeout(11500);
-  mark('12'); await openSection('家電の状態', -120); await p.waitForTimeout(12500);
+  mark('12'); await openSection('家電の状態', -120); await p.waitForTimeout(11000);
+
+  // ふつうの言葉での家電操作。扇風機は DeviceSafetyPolicy で Safe なので
+  // ブラウザ標準の confirm() ではなく、会話の中で確認して実行できる。
+  mark('D1');
+  {
+    await go('気になることを聞いてください', -150);
+    const box = p.locator('.chat-input input').first();
+    await box.click();
+    await box.type('扇風機をつけて', { delay: 110 });
+    await p.waitForTimeout(1200);
+    await p.getByRole('button', { name: '聞く' }).first().click();
+    try {
+      await p.waitForFunction(() => document.body.innerText.includes('よろしいですか'), null, { timeout: 30000 });
+    } catch (e) { console.log('confirm timeout'); }
+    await p.waitForTimeout(4500);
+  }
+
+  mark('D2');
+  {
+    const box = p.locator('.chat-input input').first();
+    await box.click();
+    await box.type('はい', { delay: 140 });
+    await p.waitForTimeout(1200);
+    await p.getByRole('button', { name: '聞く' }).first().click();
+    try {
+      await p.waitForFunction(() => document.body.innerText.includes('つけました'), null, { timeout: 30000 });
+    } catch (e) { console.log('exec timeout'); }
+    await p.waitForTimeout(6000);
+    await go('家電の状態', -120);
+    await p.waitForTimeout(8000);
+  }
 
   mark('13');
   await openSection('詳しい情報・デモ操作', -120);

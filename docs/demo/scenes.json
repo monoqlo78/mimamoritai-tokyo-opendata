@@ -5,66 +5,74 @@
   },
   {
     "name": "F1",
-    "startMs": 15108
+    "startMs": 18545
   },
   {
     "name": "F2",
-    "startMs": 28287
+    "startMs": 31709
   },
   {
     "name": "02",
-    "startMs": 49906
+    "startMs": 46521
   },
   {
     "name": "03",
-    "startMs": 67623
+    "startMs": 57878
   },
   {
     "name": "04",
-    "startMs": 80731
+    "startMs": 68780
   },
   {
     "name": "05",
-    "startMs": 96447
+    "startMs": 83459
   },
   {
     "name": "06",
-    "startMs": 109978
+    "startMs": 97015
   },
   {
     "name": "07",
-    "startMs": 127028
+    "startMs": 114060
   },
   {
     "name": "08",
-    "startMs": 139712
+    "startMs": 127466
   },
   {
     "name": "09",
-    "startMs": 154313
+    "startMs": 143042
   },
   {
     "name": "10",
-    "startMs": 166671
+    "startMs": 158906
   },
   {
     "name": "11",
-    "startMs": 181189
+    "startMs": 173487
   },
   {
     "name": "12",
-    "startMs": 193814
+    "startMs": 186169
+  },
+  {
+    "name": "D1",
+    "startMs": 205642
+  },
+  {
+    "name": "D2",
+    "startMs": 219314
   },
   {
     "name": "13",
-    "startMs": 211207
+    "startMs": 238699
   },
   {
     "name": "14",
-    "startMs": 231896
+    "startMs": 259356
   },
   {
     "name": "END",
-    "startMs": 243567
+    "startMs": 271182
   }
 ]

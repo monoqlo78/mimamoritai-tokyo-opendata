@@ -10,7 +10,7 @@
 
 この台本で実際に収録した動画がリポジトリに入っています。
 
-- **[docs/demo/mimamoritai-demo.mp4](demo/mimamoritai-demo.mp4)**（1920x1080 / 25fps / 4分2秒 / 約14MB・ナレーション＋字幕焼き込み）— **提出する本編**。冒頭で家族が見る画面と Microsoft Fabric 上の運用コンソールを見せてから、気温×電力グラフ、AI への質問と実際の回答、家電の状態、接続状況までを含む現行仕様の回。収録は Playwright（`docs/demo/record.js`）で自動化しています
+- **[docs/demo/mimamoritai-demo.mp4](demo/mimamoritai-demo.mp4)**（1920x1080 / 25fps / 4分31秒 / 約17MB・ナレーション＋字幕焼き込み）— **提出する本編**。冒頭でできること三つ（見守り／ふつうの言葉でのデータ分析／ふつうの言葉での家電操作）を言い切り、家族が見る画面と Microsoft Fabric 上の運用コンソールを見せてから、気温×電力グラフ、AI への質問と実際の回答、家電の状態、「扇風機をつけて」での操作、接続状況までを含む現行仕様の回。収録は Playwright（`docs/demo/record.js`）で自動化しています
 - **[docs/demo/mimamoritai-demo-voice-safety.mp4](demo/mimamoritai-demo-voice-safety.mp4)**（1920x1080 / 24fps / 3分11秒 / 約8.8MB）— この台本どおりの回。音声操作と、火を使う家電での安全確認が入っています。本番環境を Edge のアプリモード（`--app=<URL>` ＋専用プロファイル）で開き、`ffmpeg -f gdigrab` で画面録画したもの
 - **審査後に Azure リソースを停止しても、この動画だけは残ります**
 
