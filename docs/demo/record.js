@@ -71,7 +71,13 @@ function mark(name) { scenes.push({ name, startMs: Math.round(Date.now() - t0) }
 
   t0 = Date.now();
 
-  mark('01'); await p.waitForTimeout(11000);
+  mark('01'); await p.waitForTimeout(16000);
+
+  // 家に置く機器。SwitchBot の公式製品写真は権利上使えないので、
+  // 自分で描いた概念図（docs/images/hardware.svg）をブラウザで開いて見せる。
+  await p.goto('file:///' + require('path').join(__dirname, 'hardware.html').replace(/\\/g, '/'));
+  await p.waitForTimeout(1200);
+  mark('H1'); await p.waitForTimeout(13500);
 
   // 運用コンソール（Microsoft Fabric 上でホストしている Rayfin アプリ）。
   // 収録モードでは Fabric のサインインを通さず、本番データベースから抽出した

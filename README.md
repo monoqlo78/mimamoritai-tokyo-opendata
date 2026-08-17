@@ -37,6 +37,18 @@
 
 という設計を採っています。デバイス連携（SwitchBot）・AIルーティング（Azure Model Router）・データ分析（Microsoft Fabric Data Agent）・家族連絡（LINE）はすべて実連携とモックを切り替え可能で、**秘密情報が一切無くても `dotnet run` だけでフル機能のデモが動きます**。
 
+## 家に置く機器
+
+見守りのために新しくカメラやセンサーを設置しません。市販の **SwitchBot スマートプラグ 1 個**を、今ある家電のプラグとコンセントのあいだに挟むだけです（工事・配線なし）。
+
+![使う機器の構成](docs/images/hardware.png)
+
+本作の検証で実際に使っている実機は **SwitchBot プラグミニ (JP) × 1 台**です。ここから消費電力（`electricCurrent` × `voltage`）、その日の積算電力量（`weight`）、通電時間（`electricityOfDay`）、ON/OFF の変化時刻が取れ、`turnOn` / `turnOff` で遠隔操作もできます。取得は SwitchBot OpenAPI v1.1 の既定5分ポーリング＋Webhook（共有シークレット認証）です。
+
+SwitchBot ハブ経由の赤外線リモコン家電（照明・エアコン・扇風機）も `infraredRemoteList` から取り込む実装が入っていますが、**本作の実機構成には含みません**。マッピング表にない機種は `DeviceType.Unknown` に落ち、`DeviceSafetyPolicy` により自動的に `Restricted`（遠隔操作不可）として扱われます。詳細は [`docs/SWITCHBOT_SETUP.md`](docs/SWITCHBOT_SETUP.md)。
+
+> 上の図は本プロジェクトが作成した概念図です。実際の製品外観とは異なります。SwitchBot は株式会社 SwitchBot（Wonderlabs, Inc.）の商標であり、公式の製品写真は権利上の理由から掲載していません。
+
 ## アーキテクチャ概要
 
 ```mermaid

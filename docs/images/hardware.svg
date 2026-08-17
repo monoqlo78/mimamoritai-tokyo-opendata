@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="720" viewBox="0 0 1240 720" font-family="Yu Gothic UI, Meiryo, Hiragino Sans, sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6472"/>
+    </marker>
+    <marker id="arp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c2185b"/>
+    </marker>
+    <linearGradient id="plug" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e4e8ee"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1240" height="720" fill="#fbfcfd"/>
+
+  <text x="40" y="52" font-size="27" font-weight="bold" fill="#1c2530">見守り隊が使う機器</text>
+  <text x="40" y="84" font-size="17" fill="#5b6472">実際に家へ置くのは、市販のスマートプラグ 1 個だけ。カメラもセンサーも増やしません。</text>
+
+  <!-- ご家庭のかこい -->
+  <rect x="40" y="110" width="700" height="270" rx="14" fill="#ffffff" stroke="#d3dae2" stroke-dasharray="7 5"/>
+  <text x="60" y="140" font-size="15" font-weight="bold" fill="#8a939f">ご家庭（工事なし・挿すだけ）</text>
+
+  <!-- 家電 -->
+  <g>
+    <rect x="66" y="162" width="150" height="180" rx="12" fill="#f4f7fb" stroke="#c9d3de"/>
+    <!-- 扇風機の絵 -->
+    <circle cx="141" cy="222" r="30" fill="#ffffff" stroke="#7b8794" stroke-width="2.5"/>
+    <path d="M141 222 C141 202 158 202 158 214 C158 224 145 226 141 222Z" fill="#aab4c0"/>
+    <path d="M141 222 C158 226 154 242 143 238 C134 234 137 226 141 222Z" fill="#aab4c0"/>
+    <path d="M141 222 C124 232 114 218 125 212 C134 207 139 216 141 222Z" fill="#aab4c0"/>
+    <rect x="137" y="252" width="8" height="22" fill="#7b8794"/>
+    <rect x="123" y="274" width="36" height="7" rx="3" fill="#7b8794"/>
+    <text x="141" y="308" font-size="15" font-weight="bold" fill="#3a4552" text-anchor="middle">家電</text>
+    <text x="141" y="329" font-size="12.5" fill="#5b6472" text-anchor="middle">扇風機・照明・ストーブ</text>
+  </g>
+
+  <path d="M222 250 L268 250" stroke="#5b6472" stroke-width="2.2" marker-end="url(#ar)"/>
+  <text x="245" y="240" font-size="11.5" fill="#5b6472" text-anchor="middle">挿す</text>
+
+  <!-- スマートプラグ（自作の概念図） -->
+  <g>
+    <rect x="278" y="162" width="190" height="180" rx="12" fill="#fff5f8" stroke="#e8b9cb"/>
+    <!-- 本体 -->
+    <rect x="322" y="192" width="102" height="96" rx="18" fill="url(#plug)" stroke="#8a939f" stroke-width="2.5"/>
+    <!-- コンセント差込口 -->
+    <rect x="352" y="222" width="8" height="24" rx="2.5" fill="#3a4552"/>
+    <rect x="386" y="222" width="8" height="24" rx="2.5" fill="#3a4552"/>
+    <!-- 電源ボタン -->
+    <circle cx="373" cy="268" r="9" fill="#ffffff" stroke="#8a939f" stroke-width="2"/>
+    <path d="M373 262 L373 268" stroke="#8a939f" stroke-width="2" stroke-linecap="round"/>
+    <!-- 通電LED -->
+    <circle cx="410" cy="205" r="4.5" fill="#39b54a"/>
+    <!-- 背面の刃（壁側） -->
+    <rect x="424" y="216" width="20" height="7" rx="2" fill="#8a939f"/>
+    <rect x="424" y="256" width="20" height="7" rx="2" fill="#8a939f"/>
+    <text x="373" y="312" font-size="15" font-weight="bold" fill="#c2185b" text-anchor="middle">SwitchBot プラグミニ (JP)</text>
+    <text x="373" y="331" font-size="12.5" fill="#5b6472" text-anchor="middle">実機 1 台（本作で使用）</text>
+  </g>
+
+  <path d="M474 250 L520 250" stroke="#5b6472" stroke-width="2.2" marker-end="url(#ar)"/>
+  <text x="497" y="240" font-size="11.5" fill="#5b6472" text-anchor="middle">挿す</text>
+
+  <!-- 壁コンセント -->
+  <g>
+    <rect x="530" y="162" width="150" height="180" rx="12" fill="#f4f7fb" stroke="#c9d3de"/>
+    <rect x="570" y="200" width="70" height="92" rx="10" fill="#ffffff" stroke="#7b8794" stroke-width="2.5"/>
+    <rect x="592" y="222" width="8" height="24" rx="2.5" fill="#3a4552"/>
+    <rect x="610" y="222" width="8" height="24" rx="2.5" fill="#3a4552"/>
+    <text x="605" y="315" font-size="15" font-weight="bold" fill="#3a4552" text-anchor="middle">壁のコンセント</text>
+  </g>
+
+  <!-- Wi-Fi -->
+  <path d="M373 342 L373 404 L800 404 L800 224" stroke="#c2185b" stroke-width="2.4" fill="none" stroke-dasharray="6 5" marker-end="url(#arp)"/>
+  <g transform="translate(560,404)">
+    <rect x="-56" y="-15" width="112" height="30" rx="15" fill="#fff5f8" stroke="#e8b9cb"/>
+    <text x="0" y="5" font-size="13" font-weight="bold" fill="#c2185b" text-anchor="middle">Wi-Fi (家庭内)</text>
+  </g>
+
+  <!-- クラウド側 -->
+  <g>
+    <rect x="800" y="110" width="180" height="112" rx="12" fill="#ffffff" stroke="#c9d3de"/>
+    <text x="890" y="152" font-size="15" font-weight="bold" fill="#3a4552" text-anchor="middle">SwitchBot</text>
+    <text x="890" y="174" font-size="15" font-weight="bold" fill="#3a4552" text-anchor="middle">クラウド</text>
+    <text x="890" y="199" font-size="12" fill="#5b6472" text-anchor="middle">OpenAPI v1.1</text>
+  </g>
+
+  <path d="M980 166 L1016 166" stroke="#5b6472" stroke-width="2.2" marker-end="url(#ar)"/>
+
+  <g>
+    <rect x="1016" y="110" width="184" height="112" rx="12" fill="#eef4fb" stroke="#a9c4e0"/>
+    <text x="1108" y="150" font-size="15" font-weight="bold" fill="#1a4d80" text-anchor="middle">見守り隊</text>
+    <text x="1108" y="172" font-size="12.5" fill="#1a4d80" text-anchor="middle">Azure App Service</text>
+    <text x="1108" y="192" font-size="12.5" fill="#1a4d80" text-anchor="middle">Azure SQL / Fabric</text>
+    <text x="1108" y="211" font-size="12" fill="#5b6472" text-anchor="middle">5分ごとに取得</text>
+  </g>
+
+  <path d="M1108 222 L1108 268" stroke="#5b6472" stroke-width="2.2" marker-end="url(#ar)"/>
+  <g>
+    <rect x="1000" y="268" width="200" height="74" rx="12" fill="#ffffff" stroke="#c9d3de"/>
+    <text x="1100" y="298" font-size="14.5" font-weight="bold" fill="#3a4552" text-anchor="middle">ご家族のスマホ</text>
+    <text x="1100" y="322" font-size="13" fill="#5b6472" text-anchor="middle">ブラウザ / LINE 通知</text>
+  </g>
+
+  <!-- この1個から取れるもの -->
+  <rect x="40" y="432" width="1160" height="128" rx="14" fill="#ffffff" stroke="#d3dae2"/>
+  <text x="62" y="463" font-size="16" font-weight="bold" fill="#1c2530">このプラグ 1 個から取れるもの</text>
+
+  <g font-size="13.5" fill="#3a4552">
+    <rect x="62" y="478" width="262" height="62" rx="9" fill="#f4f7fb"/>
+    <text x="78" y="502" font-weight="bold">消費電力（W）</text>
+    <text x="78" y="524" font-size="12.5" fill="#5b6472">動いているか、止まっているか</text>
+
+    <rect x="340" y="478" width="262" height="62" rx="9" fill="#f4f7fb"/>
+    <text x="356" y="502" font-weight="bold">その日の積算電力量</text>
+    <text x="356" y="524" font-size="12.5" fill="#5b6472">いつもの一日と比べる材料</text>
+
+    <rect x="618" y="478" width="262" height="62" rx="9" fill="#f4f7fb"/>
+    <text x="634" y="502" font-weight="bold">ON / OFF の変化時刻</text>
+    <text x="634" y="524" font-size="12.5" fill="#5b6472">起きた時間・最後に動いた時間</text>
+
+    <rect x="896" y="478" width="282" height="62" rx="9" fill="#fff5f8"/>
+    <text x="912" y="502" font-weight="bold" fill="#c2185b">遠隔で ON / OFF</text>
+    <text x="912" y="524" font-size="12.5" fill="#5b6472">「扇風機をつけて」で操作できる</text>
+  </g>
+
+  <!-- 拡張 -->
+  <rect x="40" y="576" width="1160" height="106" rx="14" fill="#ffffff" stroke="#d3dae2" stroke-dasharray="7 5"/>
+  <text x="62" y="606" font-size="16" font-weight="bold" fill="#1c2530">対応済みの拡張（コードは実装済み・本作の実機構成には含みません）</text>
+  <g font-size="13.5" fill="#5b6472">
+    <text x="62" y="634">・SwitchBot ハブ経由の赤外線リモコン家電（照明・エアコン・扇風機）を <tspan font-weight="bold" fill="#3a4552">infraredRemoteList</tspan> から取り込み、同じ画面で操作できます。</text>
+    <text x="62" y="660">・人感センサー / 開閉センサー / 温湿度計も型を用意済み。未知の機種は自動的に <tspan font-weight="bold" fill="#3a4552">Restricted（操作不可）</tspan> に倒れる安全側の設計です。</text>
+  </g>
+
+  <text x="40" y="704" font-size="11.5" fill="#8a939f">※ この図は本プロジェクトが作成した概念図です。実際の製品外観とは異なります。SwitchBot は株式会社 SwitchBot（Wonderlabs, Inc.）の商標です。</text>
+</svg>

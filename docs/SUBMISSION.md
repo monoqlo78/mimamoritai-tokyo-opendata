@@ -57,7 +57,27 @@
 
 ## 4. プロダクト・技術詳細
 
-.NET 10 の Blazor Web App を Azure App Service で運用しています。家電は SwitchBot の実機とモックを設定だけで切り替えられ、秘密情報がひとつも無い状態でも全機能が動きます。家電のイベントは Azure SQL に保存すると同時に Eventstream 経由で Microsoft Fabric の Eventhouse へ流し、KQL で時系列として分析します。Fabric 上には運用コンソールを別アプリとして置き、世帯・通知・電力・屋外気温を1画面で確認できます。オープンデータは定期取得し、失敗時は直前のキャッシュを返します。猛暑日にAPIが落ちた瞬間に見守りまで止まるのを避けるためです。家族への連絡は LINE Messaging API、本人との対話は LIFF でトーク内に3Dマスコットを表示します。自動テストは1,004件です。
+.NET 10 の Blazor Web App を Azure App Service で運用しています。家電は SwitchBot の実機とモックを設定だけで切り替えられ、秘密情報がひとつも無い状態でも全機能が動きます。家電のイベントは Azure SQL に保存すると同時に Eventstream 経由で Microsoft Fabric の Eventhouse へ流し、KQL で時系列として分析します。Fabric 上には運用コンソールを別アプリとして置き、世帯・通知・電力・屋外気温を1画面で確認できます。オープンデータは定期取得し、失敗時は直前のキャッシュを返します。猛暑日にAPIが落ちた瞬間に見守りまで止まるのを避けるためです。家族への連絡は LINE Messaging API、本人との対話は LIFF でトーク内に3Dマスコットを表示します。自動テストは1,053件です。
+
+### 家に置く機器（市販のスマートプラグ 1 個だけ）
+
+見守りのために新しくカメラやセンサーを設置しません。**家電量販店で買える SwitchBot のスマートプラグを、今ある家電のプラグとコンセントのあいだに挟むだけ**です。工事も配線も不要で、本人には「何かを設置された」という感覚がほとんど残りません。カメラが受け入れられない理由をそのまま回避しています。
+
+![使う機器の構成](images/hardware.png)
+
+| 項目 | 内容 |
+| --- | --- |
+| 実機 | **SwitchBot プラグミニ (JP) × 1 台**（アプリ上の名前 `プラグミニ 92`、OpenAPI の `deviceType` は `Plug`） |
+| 設置 | 家電のプラグを抜いて挟むだけ。工事・配線・電池なし |
+| 取得するデータ | 消費電力（`electricCurrent` × `voltage`）／その日の積算電力量（`weight`）／通電時間（`electricityOfDay`）／ON・OFF の変化時刻 |
+| 操作 | `turnOn` / `turnOff`（「扇風機をつけて」で遠隔操作） |
+| 取得方式 | SwitchBot OpenAPI v1.1 を既定5分間隔でポーリング（Webhook も併用、共有シークレットで認証） |
+| 対応済みの拡張 | SwitchBot ハブ経由の赤外線リモコン家電（照明・エアコン・扇風機）を `infraredRemoteList` から取り込み。**本作の実機構成には含みません** |
+| 安全側の既定 | マッピング表にない機種は `DeviceType.Unknown` → `DeviceSafetyPolicy` により自動的に `Restricted`（遠隔操作不可） |
+
+プラグミニ (JP) はステータスに `power`（ON/OFF）フィールドを返さないため、電流が流れているかどうかから ON/OFF を推定しています。機種ごとにレスポンスの形が異なるので、公式仕様（[OpenWonderLabs/SwitchBotAPI](https://github.com/OpenWonderLabs/SwitchBotAPI)）の `devices/*.md` を機種ごとに確認して実装しました。詳細は `docs/SWITCHBOT_SETUP.md`。
+
+> 上の図は本プロジェクトが作成した概念図です。実際の製品外観とは異なります。SwitchBot は株式会社 SwitchBot（Wonderlabs, Inc.）の商標であり、公式の製品写真は権利上の理由から掲載していません。
 
 ---
 
@@ -139,12 +159,13 @@
 
 | 提出物 | 状態 | 場所（リポジトリ相対） |
 |---|---|---|
-| プレゼン資料 | 更新済み（16枚・16:9・8/17時点／テスト件数1,004に更新） | `docs/mimamoritai-deck.pptx` / `docs/mimamoritai-deck.pdf` |
-| デモ動画（4分31秒） | 収録済み。冒頭にできること三つの宣言と Microsoft Fabric の運用コンソール、終盤にふつうの言葉での家電操作を加えて再収録（8/18）。ナレーション・字幕あり・BGMなし | `docs/demo/mimamoritai-demo.mp4` |
+| プレゼン資料 | 更新済み（**17枚**・16:9・8/18時点。10枚目に「家に置くのはコンセント1個だけ」を追加／テスト件数1,053） | `docs/mimamoritai-deck.pptx` / `docs/mimamoritai-deck.pdf` |
+| デモ動画（4分51秒） | 収録済み。冒頭にできること三つの宣言と Microsoft Fabric の運用コンソール、終盤にふつうの言葉での家電操作を加えて再収録（8/18）。ナレーション・字幕あり・BGMなし | `docs/demo/mimamoritai-demo.mp4` |
 | 〃 参考：音声操作と安全確認の回 | 収録済み（旧収録・本編に無い挙動の記録） | `docs/demo/mimamoritai-demo-voice-safety.mp4` |
 | 2分プレゼン動画 | **未収録**（8/26〜8/30に収録） | — |
 | 画面キャプチャ3点 | 取得済み（8/16時点） | `docs/captures/` |
 | 開発記録 | 公開済み | `docs/ARTICLE.md`（Qiita 版は `docs/qiita-body.md`） |
+| 使う機器の構成図 | 追加（自作の概念図・公式製品写真は不使用） | `docs/images/hardware.svg` / `docs/images/hardware.png` |
 | 稼働証跡 | あり | `docs/EVIDENCE.md` |
 | アーキテクチャ | あり | `docs/ARCHITECTURE.md` |
 | セキュリティ申告 | あり | `docs/SECURITY.md` |
@@ -155,14 +176,14 @@
 > PDF を再出力するときは、`docs/` が OneDrive 同期配下のため PowerPoint がクラウド側の旧版を開くことがある。
 > `C:\Temp` などローカルへ pptx をコピーしてから変換し、出力した PDF を `docs/` へ戻すこと。
 >
-> `scripts/build-deck.js` の出力は 13 枚。提出版はそこに showcase 3 枚を足した 16 枚なので、
+> `scripts/build-deck.js` の出力は 13 枚。提出版はそこに showcase 3 枚と機器スライド 1 枚（`scripts/add-hardware-slide.py`）を足した 17 枚なので、
 > 再生成する場合は追加分を戻すこと（無条件に上書きすると 3 枚失われる）。
 
 ---
 
 ## 10. 提出前チェック（毎回）
 
-- [x] 資料は**16:9**（PowerPoint または PDF）← 16枚・1.7778 を確認済み（8/17 再確認）
+- [x] 資料は**16:9**（PowerPoint または PDF）← 17枚・1.7778 を確認済み（8/18 再確認）
 - [x] 引用資料に**出典を明記**、地図のロゴ・帰属表示を隠していない
       ← 地図は一切使っていない（leaflet / mapbox / 地理院タイルいずれも不使用）。オープンデータの出典は画面上（`Home.razor` の「出典：環境省熱中症予防情報サイト／気象庁」など）と動画の 2:19 の場面で明示している
 - [x] デモ動画に**BGMを入れていない**（背後の生活音にも注意）

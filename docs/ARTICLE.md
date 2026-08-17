@@ -16,7 +16,7 @@
 
 ダッシュボードに住んでいる3Dマスコットの「ミマモ」です。**話しかけると反応します**。これも既製の素材ではなく、**自作の MCP サーバー**で Blender を動かして自分でモデリングしました（6章）。
 
-▶ **通しのデモ動画（4分31秒・ナレーション＋字幕入り）**: 原本は [docs/demo/mimamoritai-demo.mp4](https://github.com/monoqlo78/mimamoritai-careroute-ai/blob/main/docs/demo/mimamoritai-demo.mp4)。YouTube 版（https://youtu.be/TnM-RHFZ_Lc ）は音声操作と安全確認を収めた先行版です
+▶ **通しのデモ動画（4分51秒・ナレーション＋字幕入り）**: 原本は [docs/demo/mimamoritai-demo.mp4](https://github.com/monoqlo78/mimamoritai-careroute-ai/blob/main/docs/demo/mimamoritai-demo.mp4)。YouTube 版（https://youtu.be/TnM-RHFZ_Lc ）は音声操作と安全確認を収めた先行版です
 
 この記事は「作ったもの紹介」半分、「壊れ方の記録」半分です。とくに後半の**沈黙して壊れた4つの障害**は、同じ構成を組む人には役に立つと思います。
 
@@ -89,6 +89,29 @@ Bot：今朝6時40分に寝室の照明が点いています。
 
 「助けて」には必ず **119番の案内**が付きます。
 このサービスは緊急通報の代わりにはならない、という立場を最初に示しています。
+
+### 使う機器：市販のスマートプラグ 1 個だけ
+
+「見守り」と聞くと、カメラや専用センサーを何個も設置する話になりがちです。この作品が家に置くのは、**家電量販店で買える SwitchBot のスマートプラグ 1 個だけ**です。工事も配線もありません。今使っている家電のプラグを抜いて、あいだに挟むだけです。
+
+![使う機器の構成](./images/hardware.png)
+
+実際に本作の検証で使っている実機は、**SwitchBot プラグミニ (JP) 1 台**です（アプリ上の名前は `プラグミニ 92`、SwitchBot OpenAPI 上の `deviceType` は `Plug`）。この 1 個から、次の 4 つが取れます。
+
+| 取れるもの | SwitchBot OpenAPI のフィールド | 見守りでの意味 |
+| --- | --- | --- |
+| 消費電力（W） | `electricCurrent`（mA）× `voltage`（V） | いま動いているか、止まっているか |
+| その日の積算電力量 | `weight` | いつもの一日と重ねて比べる材料 |
+| 通電していた時間 | `electricityOfDay`（分） | 使いすぎ・つけっぱなしの検知 |
+| ON / OFF の切り替え | `turnOn` / `turnOff` コマンド | 「扇風機をつけて」で遠隔操作できる |
+
+ここで少し面倒なのは、**プラグミニ (JP) はステータスに `power`（ON/OFF）フィールドを返さない**ことです。Bot や Color Bulb は `power: "on"` を返してくれるのに、プラグミニは電流と積算値しか返しません。なので `SwitchBotDeviceProvider` は、電流が流れているかどうかから ON/OFF を推定しています。機種ごとにレスポンスの形が違うので、ここは公式仕様（[OpenWonderLabs/SwitchBotAPI](https://github.com/OpenWonderLabs/SwitchBotAPI)）の `devices/*.md` を1つずつ読んで実装しました。
+
+**なぜカメラではなくプラグなのか**は、技術というより受け入れやすさの問題です。カメラは、見られる側にとって受け入れ難い。一方コンセントは、本人にとって「何かを設置された」という感覚がほぼありません。取れる情報は圧倒的に少ないですが、生活リズムの変化を見るには足りました。
+
+拡張としては、**SwitchBot ハブ経由の赤外線リモコン家電**（照明・エアコン・扇風機）も実装済みです。`GET /v1.1/devices` が返す `infraredRemoteList` を `deviceList` と同じように取り込むので、高齢者宅で多い「リモコンで動かす照明・エアコン」も同じ画面に並びます。人感センサー・開閉センサー・温湿度計の型も用意してありますが、**本作の実機構成には含みません**（持っていないものを「対応しています」とは書かない方針です）。
+
+なお、マッピング表にない機種（Hub / Curtain / Lock / ロボット掃除機など）は `DeviceType.Unknown` に落ち、`DeviceSafetyPolicy` によって自動的に `Restricted`（遠隔操作を許可しない）として扱われます。**知らない機器は勝手に動かさない**、が既定です。
 
 ---
 
@@ -729,7 +752,7 @@ Draco をかければ 2.1MB まで落ちますが、読み込む側に専用の�
 ## 7. リンク
 
 - リポジトリ: https://github.com/monoqlo78/mimamoritai-careroute-ai
-- **デモ動画（4分31秒・ナレーション＋字幕入り）**: [docs/demo/mimamoritai-demo.mp4](https://github.com/monoqlo78/mimamoritai-careroute-ai/blob/main/docs/demo/mimamoritai-demo.mp4)
+- **デモ動画（4分51秒・ナレーション＋字幕入り）**: [docs/demo/mimamoritai-demo.mp4](https://github.com/monoqlo78/mimamoritai-careroute-ai/blob/main/docs/demo/mimamoritai-demo.mp4)
 - **先行版（音声操作と安全確認・3分11秒）**: https://youtu.be/TnM-RHFZ_Lc （原本は [docs/demo/mimamoritai-demo-voice-safety.mp4](https://github.com/monoqlo78/mimamoritai-careroute-ai/blob/main/docs/demo/mimamoritai-demo-voice-safety.mp4)）
 - 安全設計の方針（秘密情報の扱い・監査ログ）: [docs/SECURITY.md](https://github.com/monoqlo78/mimamoritai-careroute-ai/blob/main/docs/SECURITY.md)
 - 稼働証跡（開発機以外からの到達性・TLS・画面）: [docs/EVIDENCE.md](https://github.com/monoqlo78/mimamoritai-careroute-ai/blob/main/docs/EVIDENCE.md)

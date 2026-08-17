@@ -1,5 +1,24 @@
 # SwitchBot API セットアップ ＆ 実装状況
 
+## 0-0. 使う機器（実機構成）
+
+![使う機器の構成](images/hardware.png)
+
+本作の検証で実際に使っている実機は **SwitchBot プラグミニ (JP) × 1 台**です（アプリ上の名前 `プラグミニ 92`、`GET /v1.1/devices` が返す `deviceType` は `Plug`）。工事や配線は不要で、今ある家電のプラグを抜いて、家電と壁のコンセントのあいだに挟むだけです。
+
+| 取れるもの | ステータス応答のフィールド | 単位 | 見守りでの使いみち |
+| --- | --- | --- | --- |
+| 消費電力 | `electricCurrent` × `voltage` | mA / V | いま動いているか、止まっているか |
+| その日の積算電力量 | `weight`（SwitchBot 側の命名） | W（1日ぶん） | いつもの一日と重ねて比べる |
+| 通電していた時間 | `electricityOfDay` | 分 | つけっぱなしの検知 |
+| ON / OFF 操作 | `turnOn` / `turnOff` コマンド | — | 「扇風機をつけて」で遠隔操作 |
+
+**プラグミニ (JP) はステータスに `power` フィールドを返しません。** Bot や Color Bulb は `power: "on"` を返しますが、プラグミニは電流と積算値しか返さないため、`SwitchBotDeviceProvider` は `electricCurrent > 0` から ON/OFF を推定します（下記「3.」参照）。
+
+SwitchBot ハブ経由の赤外線リモコン家電（照明・エアコン・扇風機）も `infraredRemoteList` から取り込む実装が入っていますが、**本作の実機構成には含みません**。持っていない機器を「対応しています」とは書かない方針です。
+
+> この図は本プロジェクトが作成した概念図です。実際の製品外観とは異なります。SwitchBot は株式会社 SwitchBot（Wonderlabs, Inc.）の商標であり、公式の製品写真は権利上の理由から掲載していません。
+
 ## 0. 本番運用: 世帯ごとにWeb UIから接続する（推奨）
 
 **本番環境では、Token/SecretはApp Serviceの設定や `dotnet user-secrets` には入れません。** 各世帯のオーナーが、ログイン後に **「LINE連携設定」画面（`/settings/switchbot`）** で自分のSwitchBot Token/Secretを直接入力します。入力された値は保存前に `GET /v1.1/devices` で疎通確認され、成功した場合のみ ASP.NET Core Data Protection で暗号化された状態で世帯ごとに（`SwitchBotConnection` テーブルへ）保存されます。平文はデータベースにもログにも一切残りません。詳細は `docs/SECURITY.md`「世帯ごとのSwitchBot認証情報」を参照してください。
