@@ -50,7 +50,11 @@ public sealed class AssistantOrchestrator(
     /// </summary>
     private readonly TimeSpan _fabricBudget = fabricBudget ?? TimeSpan.FromSeconds(4);
 
-    private const string SystemPrompt = """
+    /// <summary>
+    /// Visible to the test project so the accuracy harness measures the prompt that
+    /// actually ships, not a copy of it (see IntentEvaluationTests).
+    /// </summary>
+    internal const string SystemPrompt = """
         あなたは高齢者見守りサービス「見守り隊 / CareRoute AI」の意図解析エンジンです。
         ユーザーの日本語メッセージを、次のJSONだけで返してください。前後に文章やコードフェンスを付けないこと。
 
@@ -140,6 +144,19 @@ public sealed class AssistantOrchestrator(
             return await ReplyWithoutModelAsync(request, AssistantKnowledgeBase.UrgentReply, ct);
         }
 
+        // "この薬と一緒に飲んでいい?" must not reach a model that would answer it. Decided
+        // by keyword before the router so the refusal survives an outage too.
+        //
+        // This runs *before* the FAQ pass, not after. Both are deterministic and free, so
+        // the order is purely a question of which layer should win a tie -- and a question
+        // for a professional is the one class where answering from the wrong layer does
+        // harm. 「施設の費用の相場はいくら」 used to be caught by the pricing FAQ and told
+        // "このLINEのやりとりに、お金はかかりません", which answers a question nobody asked.
+        if (AssistantExpertGuidance.TryRefer(request.Message) is { } referral)
+        {
+            return await ReplyWithoutModelAsync(request, referral.Reply, ct);
+        }
+
         // Product questions ("家族の追加方法は") are answered from the knowledge base with no
         // model call at all. Only wording that cannot also be a device command or a question
         // about the resident's day is allowed to answer this early -- see FaqEntry.PreIntent.
@@ -150,13 +167,6 @@ public sealed class AssistantOrchestrator(
         if (AssistantKnowledgeBase.TryAnswer(request.Message, FaqMatchMode.Strict) is { } known)
         {
             return await ReplyWithoutModelAsync(request, known.Reply, ct);
-        }
-
-        // "この薬と一緒に飲んでいい?" must not reach a model that would answer it. Decided
-        // by keyword before the router so the refusal survives an outage too.
-        if (AssistantExpertGuidance.TryRefer(request.Message) is { } referral)
-        {
-            return await ReplyWithoutModelAsync(request, referral.Reply, ct);
         }
 
         var aliasHint = await BuildAliasHintAsync(request.HouseholdId, ct);
@@ -811,6 +821,9 @@ public sealed class AssistantOrchestrator(
             // is not one. Truncated to the column width so an unusually long
             // reason can never fail the write and lose the whole log row.
             Error = result.Success ? null : Truncate(result.Error, 256),
+            PromptTokens = result.PromptTokens,
+            CompletionTokens = result.CompletionTokens,
+            TotalTokens = result.TotalTokens,
             CreatedAtUtc = clock.GetUtcNow()
         });
 

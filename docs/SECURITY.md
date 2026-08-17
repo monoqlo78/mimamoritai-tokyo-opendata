@@ -109,6 +109,26 @@ Fabric にも Private Link はありますが、**採用していません**。�
 - 機器名（エイリアス）が一意に特定できない場合は、機器を推測せずに確認を求める。
 - LLMの出力（JSON）が不正な場合、`IntentParser.TryParse` は `null` を返し、`AssistantOrchestrator` は1回だけ修復を試みてそれでも失敗すれば何も実行しない。
 
+## HTTP APIの認可と世帯スコープ
+
+`/api/*` の読み取り系エンドポイントは、**呼び出し側が指定した世帯IDを信用しません**。`ApiEndpoints` の各ハンドラは以下の順で処理します。
+
+1. `householdId` が省略された場合は `HouseholdAccessService.ResolveDefaultAsync` で**サインイン中の利用者がアクセスできる世帯**を決定する（匿名デモモードでは `DataSourceMode=Sample` の世帯のみ）。
+2. `householdId` が明示された場合は `HouseholdAccessService.CanAccessAsync` を必ず通し、権限が無ければ **404 Not Found** を返す（403 ではなく 404 を返すのは、他世帯のIDの存在有無を推測させないため）。
+3. 一覧系（`GET /api/devices` など）のクエリは、確定した世帯IDで**必ずフィルタ**する。
+
+- **`GET /api/devices` は当初この3段をすべて欠いており、全世帯の機器を無条件に返していました**（隣接する `GET /api/devices/{id}` には `CanAccessAsync` があったため、一覧だけが抜けている状態でした）。現在は上記のとおり修正済みで、`DeviceEndpointAuthorizationTests` が「他世帯の機器が一覧に出ない」「他世帯の機器IDを直接叩くと 404」の両方を回帰テストしています。
+- 単一世帯のデモでは表面化しない種類の欠落であり、**世帯フィルタは「動くかどうか」ではなくテストでしか守れない**という教訓から、認可はエンドポイント単位でテストを持つ方針にしています。
+
+## SwitchBot Webhookの認証
+
+`POST /webhooks/switchbot` は、SwitchBotクラウドからの機器状態変化コールバックを受け取ります。
+
+- **SwitchBotのWebhookは署名ヘッダーを送りません。** LINE のような HMAC 署名検証が使えないため、**共有シークレット方式**を採っています。`SwitchBot:WebhookSecret` に十分長いランダム文字列を設定し、同じ値を `X-Webhook-Token` ヘッダー、または**クエリ文字列 `?token=`** で渡します（SwitchBot のコンソールはコールバックURLしか設定できずカスタムヘッダーを送れないため、後者を用意しています）。比較は両辺を SHA-256 でハッシュしたうえで `CryptographicOperations.FixedTimeEquals` で行い、**定数時間かつシークレットの長さも漏らしません**。
+- **既定は fail-closed です。** `SwitchBot:WebhookSecret` が未設定の場合、リクエストは **401 Unauthorized** で拒否されます。コールバックを取りこぼしても、`SwitchBotSyncService` のポーリングが状態を回収するため実害は「反映が遅れる」だけであり、無認証で受け付けるより安全です。
+- **明示的に無認証を許す場合のみ** `SwitchBot:AllowUnauthenticatedWebhook=true`（既定 `false`）を設定します。ローカル開発でトンネル越しに疎通確認する用途に限定してください。
+- **修正前は無認証でした。** 攻撃者がエンドポイントを知っていれば、任意のMACアドレスを詐称した偽の状態変化イベントを注入でき、「一定時間まったく機器が動いていない」ことを根拠にした**無活動アラートを握り潰す**ことが可能でした。見守りアプリにおいて「アラートが鳴らない」は最も危険な故障モードであるため、優先して塞いでいます。
+
 ## 監査ログ (`DeviceCommand`)
 
 すべての家電操作の**試行**（成功・失敗・拒否のいずれも）は `DeviceCommand` エンティティとして永続化されます（`DeviceControlService.ExecuteAsync` / `RejectAsync`）。記録される情報:
@@ -133,3 +153,27 @@ Fabric にも Private Link はありますが、**採用していません**。�
   - LINEなど外部サービスに送信するメッセージには、必要以上の医療的・断定的な表現を含めない（`LocalDataQuestionService` の応答文言もこの方針に沿っている）。
   - Fabric Data Agentの指示文（`docs/FABRIC_SETUP.md`）にも、断定的な診断をしないよう明記している。
 - 本リポジトリ・ドキュメントの範囲では、認証・認可・データ保持期間・削除ポリシー等の詳細な運用ポリシーは策定されていません。実運用移行時には別途整備が必要です（要確認）。
+
+## 既知の未対応事項と対応計画
+
+「対応していないこと」を暗黙にしないため、現時点で把握している制約・未対応事項をここに集約します。**この一覧に無いものは「検討していない」ではなく「把握していない」を意味します。** 新たに判明した項目は、直すかどうかに関わらずまずここに1行追加する運用とします。
+
+| # | 事項 | 現状 | 影響 | 対応計画 |
+| --- | --- | --- | --- | --- |
+| 1 | ダッシュボード全体の認証 | 既定 `Auth:Enabled=false`（匿名デモモード）。OIDC の土台と `HouseholdAccessService` は実装済み | 匿名モードでは `DataSourceMode=Sample` の世帯しか見えないため実データは露出しないが、**本番運用としては不足** | 実運用前に `Auth:Enabled=true` とし、Entra External ID 等の本番プロバイダーを設定する。**着手条件**：実データを1世帯でも投入する時点 |
+| 2 | 書き込み系APIのCSRF対策 | Blazor Server のフォームは既定の Antiforgery で保護。`/api/*` の書き込み系は現状 API キー等を持たない | 匿名デモモードでは第三者が機器操作APIを叩ける可能性がある（ただし `DeviceSafetyPolicy` により `Guarded` 機器のONは確認ターン無しでは実行されない） | #1 と同時に対応。認証が入れば Cookie + Antiforgery で塞がる |
+| 3 | レート制限 | LINE Webhook / SwitchBot Webhook / `/api/*` にレート制限なし | 大量リクエストによるコスト増（LLM 呼び出しを伴う経路）とサービス低下 | ASP.NET Core のレート制限ミドルウェアを Webhook 経路に適用する。**着手条件**：公開URLを常時稼働させる時点 |
+| 4 | データ保持期間と削除 | `PowerReading` / `DeviceCommand` / `AiRequestLog` は無期限に保持。削除APIなし | 生活リズムを推測できるデータが蓄積し続ける | 保持期間（例: 生データ90日、日次集計は無期限）と世帯単位の削除手順を定義する。**着手条件**：実運用移行時 |
+| 5 | LLM 応答の内容監査 | `InventsNumbers` 検査で「ソースに無い数値を主張した要約」は破棄するが、それ以外の内容監査は無い | 断定的な医療表現などがすり抜ける余地 | プロンプト側の禁止事項に加え、出力側の禁止語チェックを追加する |
+| 6 | 意図分類の継続的な精度計測 | 100件のラベル付き評価セットと計測ハーネスを実装済み（`docs/eval/intent-accuracy.md`）。ただし**CIでは毎push実行していない** | モデル更新時の精度劣化に気付くのが遅れる | API 費用が発生するため手動実行としている。モデル／プロンプト変更時に手動で回し、結果を `docs/eval/intent-accuracy.md` にコミットする運用 |
+
+### 対応済み（履歴として残す）
+
+過去に穴があり、現在は修正済みの項目です。同じ種類の見落としを繰り返さないため、削除せずに残します。
+
+| 事項 | 何が問題だったか | 対応 |
+| --- | --- | --- |
+| `GET /api/devices` の認可・世帯フィルタ欠落 | 隣接エンドポイントには `CanAccessAsync` があったのに、一覧だけ認可も世帯フィルタも無く**全世帯の機器を返していた** | 上記「HTTP APIの認可と世帯スコープ」のとおり修正。エンドポイント単位の回帰テストを追加 |
+| `POST /webhooks/switchbot` の無認証 | MACアドレスを詐称した偽イベントを注入でき、**無活動アラートを握り潰せた** | 共有シークレット認証を追加し、既定 fail-closed 化。上記「SwitchBot Webhookの認証」参照 |
+| LLM のトークン使用量が計測できない | `ChatCompletionResponse` が `usage` をデシリアライズしておらず、削減施策の効果を金額で言えなかった | ルーター → `AiRequestLog` → 管理画面まで `PromptTokens`/`CompletionTokens`/`TotalTokens` を通した |
+

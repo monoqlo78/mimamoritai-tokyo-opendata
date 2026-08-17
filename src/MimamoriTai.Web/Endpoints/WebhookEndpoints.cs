@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
@@ -6,6 +8,7 @@ using MimamoriTai.Core.Abstractions;
 using MimamoriTai.Core.Application;
 using MimamoriTai.Core.Domain;
 using MimamoriTai.Infrastructure.Data;
+using MimamoriTai.Infrastructure.Devices;
 using MimamoriTai.Infrastructure.Line;
 
 namespace MimamoriTai.Web.Endpoints;
@@ -289,10 +292,20 @@ public static partial class WebhookEndpoints
         app.MapPost("/webhooks/switchbot", async (
             HttpRequest httpRequest,
             SwitchBotWebhookIngestService ingest,
+            IOptions<SwitchBotOptions> switchBotOptions,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
             var logger = loggerFactory.CreateLogger("SwitchBotWebhook");
+
+            if (!IsSwitchBotCallerAuthorised(httpRequest, switchBotOptions.Value, out var authFailure))
+            {
+                // 401 before the body is read: an unauthenticated caller must not be able
+                // to reach the ingest path at all. Never echo the presented token.
+                logger.LogWarning("Rejected a SwitchBot webhook callback: {Reason}", authFailure);
+                return Results.Unauthorized();
+            }
+
             using var reader = new StreamReader(httpRequest.Body);
             var body = await reader.ReadToEndAsync(ct);
 
@@ -326,6 +339,62 @@ public static partial class WebhookEndpoints
         }).WithName("SwitchBotWebhook").DisableAntiforgery();
 
         return app;
+    }
+
+    /// <summary>
+    /// Header name carrying the SwitchBot webhook shared secret. A query parameter of the
+    /// same purpose (<c>?token=</c>) is also accepted, because the SwitchBot console only
+    /// lets you configure a callback URL, not custom headers.
+    /// </summary>
+    internal const string SwitchBotWebhookTokenHeader = "X-Webhook-Token";
+
+    /// <summary>
+    /// Fail-closed check for the SwitchBot webhook. Returns false (with a short,
+    /// secret-free reason) when no secret is configured, or when the presented value does
+    /// not match. Comparison is length-independent and constant-time.
+    /// </summary>
+    internal static bool IsSwitchBotCallerAuthorised(
+        HttpRequest request, SwitchBotOptions options, out string failureReason)
+    {
+        var expected = options.WebhookSecret;
+
+        if (string.IsNullOrWhiteSpace(expected))
+        {
+            if (options.AllowUnauthenticatedWebhook)
+            {
+                failureReason = string.Empty;
+                return true;
+            }
+
+            failureReason = "SwitchBot:WebhookSecret is not configured.";
+            return false;
+        }
+
+        var presented = request.Headers[SwitchBotWebhookTokenHeader].ToString();
+        if (string.IsNullOrEmpty(presented))
+        {
+            presented = request.Query["token"].ToString();
+        }
+
+        if (string.IsNullOrEmpty(presented))
+        {
+            failureReason = "No webhook token was presented.";
+            return false;
+        }
+
+        // Hash both sides first so FixedTimeEquals sees equal-length inputs and the
+        // comparison cannot leak the secret's length.
+        var presentedHash = SHA256.HashData(Encoding.UTF8.GetBytes(presented));
+        var expectedHash = SHA256.HashData(Encoding.UTF8.GetBytes(expected));
+
+        if (!CryptographicOperations.FixedTimeEquals(presentedHash, expectedHash))
+        {
+            failureReason = "The presented webhook token did not match.";
+            return false;
+        }
+
+        failureReason = string.Empty;
+        return true;
     }
 
     private static async Task ReplyAsync(

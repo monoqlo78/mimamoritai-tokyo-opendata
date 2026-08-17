@@ -90,7 +90,7 @@ public static class AssistantExpertGuidance
     private static readonly (ExpertField Field, string[] Words)[] Topics =
     [
         (ExpertField.Medical, ["手術", "認知症", "診断", "ワクチン", "予防接種", "点滴", "入院"]),
-        (ExpertField.Care, ["デイサービス", "老人ホーム", "介護施設", "介護"]),
+        (ExpertField.Care, ["デイサービス", "老人ホーム", "介護施設", "介護", "施設"]),
         (ExpertField.Money, ["年金", "確定申告", "保険金", "契約書", "弁護士", "税金", "保険"])
     ];
 

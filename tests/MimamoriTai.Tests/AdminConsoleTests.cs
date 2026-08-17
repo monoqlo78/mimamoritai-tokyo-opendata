@@ -280,6 +280,105 @@ public class AdminConsoleTests
         Assert.Equal(200d, usage.AverageDurationMs, 3);
     }
 
+    // Rows written before token capture existed carry no usage block. Summing over
+    // them would report a fraction of the bill as if it were the whole bill, so the
+    // console counts how many calls were actually metered and reports the mean over
+    // that subset -- the number a prompt-shortening change is supposed to move.
+    [Fact]
+    public async Task LoadAsync_SumsTokens_AndCountsOnlyMeteredCallsTowardTheAverage()
+    {
+        using var testDb = new TestDb();
+        await testDb.SeedAsync();
+
+        var now = DateTimeOffset.UtcNow;
+        testDb.Context.AiRequestLogs.AddRange(
+            new AiRequestLog
+            {
+                HouseholdId = testDb.HouseholdId,
+                Purpose = "summary",
+                Router = "Azure Model Router",
+                ResolvedModel = "gpt-x",
+                DurationMs = 100,
+                Success = true,
+                PromptTokens = 400,
+                CompletionTokens = 100,
+                TotalTokens = 500,
+                CreatedAtUtc = now.AddHours(-1)
+            },
+            new AiRequestLog
+            {
+                HouseholdId = testDb.HouseholdId,
+                Purpose = "summary",
+                Router = "Azure Model Router",
+                ResolvedModel = "gpt-x",
+                DurationMs = 120,
+                Success = true,
+                PromptTokens = 200,
+                CompletionTokens = 100,
+                TotalTokens = 300,
+                CreatedAtUtc = now.AddHours(-2)
+            },
+            // Predates token capture: counted as a request, but not as a metered one.
+            new AiRequestLog
+            {
+                HouseholdId = testDb.HouseholdId,
+                Purpose = "summary",
+                Router = "Azure Model Router",
+                ResolvedModel = "gpt-x",
+                DurationMs = 140,
+                Success = true,
+                CreatedAtUtc = now.AddHours(-3)
+            });
+        await testDb.Context.SaveChangesAsync();
+
+        var admin = FakeCurrentUserAccessor.User(Guid.NewGuid(), "運用者");
+        var console = Console(testDb, Access(admin, new AdminOptions(), new AuthOptions()));
+
+        var model = await console.LoadAsync();
+        Assert.NotNull(model);
+
+        var usage = Assert.Single(model.AiUsage);
+        Assert.Equal(3, usage.Requests);
+        Assert.Equal(2, usage.MeteredRequests);
+        Assert.Equal(600, usage.PromptTokens);
+        Assert.Equal(200, usage.CompletionTokens);
+        Assert.Equal(800, usage.TotalTokens);
+        Assert.Equal(400d, usage.AverageTokensPerRequest, 3);
+    }
+
+    // Every row predating token capture must read as "nothing measured", not as
+    // "zero tokens spent" -- a divide-by-zero here would take the whole console down.
+    [Fact]
+    public async Task LoadAsync_ReportsZeroAverage_WhenNothingInTheWindowWasMetered()
+    {
+        using var testDb = new TestDb();
+        await testDb.SeedAsync();
+
+        testDb.Context.AiRequestLogs.Add(new AiRequestLog
+        {
+            HouseholdId = testDb.HouseholdId,
+            Purpose = "summary",
+            Router = "Azure Model Router",
+            ResolvedModel = "gpt-x",
+            DurationMs = 100,
+            Success = true,
+            CreatedAtUtc = DateTimeOffset.UtcNow.AddHours(-1)
+        });
+        await testDb.Context.SaveChangesAsync();
+
+        var admin = FakeCurrentUserAccessor.User(Guid.NewGuid(), "運用者");
+        var console = Console(testDb, Access(admin, new AdminOptions(), new AuthOptions()));
+
+        var model = await console.LoadAsync();
+        Assert.NotNull(model);
+
+        var usage = Assert.Single(model.AiUsage);
+        Assert.Equal(1, usage.Requests);
+        Assert.Equal(0, usage.MeteredRequests);
+        Assert.Equal(0, usage.TotalTokens);
+        Assert.Equal(0d, usage.AverageTokensPerRequest);
+    }
+
     // A failure count with no reason next to it leaves the operator guessing,
     // which is exactly what happened when a single failed call sat in the
     // console for days with nothing to explain it.

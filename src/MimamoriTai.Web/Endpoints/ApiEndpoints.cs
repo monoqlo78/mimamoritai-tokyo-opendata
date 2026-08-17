@@ -14,63 +14,9 @@ public static class ApiEndpoints
         app.MapGet("/health", () => Results.Ok(new { status = "healthy", utc = DateTimeOffset.UtcNow }))
             .WithName("Health");
 
-        app.MapGet("/api/devices", async (AppDbContext db, CancellationToken ct) =>
-        {
-            // Materialized before projecting: Name/Room are the display values, which are
-            // computed from the override columns and so cannot be evaluated in SQL.
-            var rows = await db.Devices.ToListAsync(ct);
+        app.MapGet("/api/devices", ListDevicesAsync).WithName("GetDevices");
 
-            var devices = rows
-                .OrderBy(d => d.DisplayName, StringComparer.Ordinal)
-                .Select(d => new
-                {
-                    d.Id,
-                    Name = d.DisplayName,
-                    d.Alias,
-                    Room = d.DisplayRoom,
-                    ProviderName = d.Name,
-                    ProviderRoom = d.Room,
-                    DeviceType = d.DeviceType.ToString(),
-                    Provider = d.Provider.ToString(),
-                    d.IsEnabled,
-                    d.RemoteControlAllowed,
-                    SafetyClass = d.SafetyClass.ToString()
-                })
-                .ToList();
-
-            return Results.Ok(devices);
-        }).WithName("GetDevices");
-
-        app.MapGet("/api/devices/{id:guid}", async (Guid id, AppDbContext db, CancellationToken ct) =>
-        {
-            var device = await db.Devices.FirstOrDefaultAsync(d => d.Id == id, ct);
-            if (device is null)
-            {
-                return Results.NotFound();
-            }
-
-            var lastEvent = await db.DeviceEvents
-                .Where(e => e.DeviceId == id)
-                .OrderByDescending(e => e.OccurredAtUtc)
-                .FirstOrDefaultAsync(ct);
-
-            return Results.Ok(new
-            {
-                device.Id,
-                Name = device.DisplayName,
-                device.Alias,
-                Room = device.DisplayRoom,
-                ProviderName = device.Name,
-                ProviderRoom = device.Room,
-                DeviceType = device.DeviceType.ToString(),
-                Provider = device.Provider.ToString(),
-                device.IsEnabled,
-                device.RemoteControlAllowed,
-                SafetyClass = device.SafetyClass.ToString(),
-                LastState = lastEvent?.State,
-                LastEventUtc = lastEvent?.OccurredAtUtc
-            });
-        }).WithName("GetDevice");
+        app.MapGet("/api/devices/{id:guid}", GetDeviceAsync).WithName("GetDevice");
 
         app.MapPost("/api/assistant/message", async (
             AssistantMessageRequest request,
@@ -145,5 +91,94 @@ public static class ApiEndpoints
         }).WithName("GetRecentActivity");
 
         return app;
+    }
+
+    /// <summary>
+    /// Devices are household-scoped data, but this endpoint used to take no household at
+    /// all: it returned every row in the table to any caller, while each of its
+    /// neighbours above went through <see cref="HouseholdAccessService"/>. A reviewer
+    /// found it, and it was the one place where "which household is asking?" was never
+    /// asked. It now resolves and checks a household exactly as they do.
+    /// </summary>
+    internal static async Task<IResult> ListDevicesAsync(
+        Guid? householdId, AppDbContext db, HouseholdAccessService householdAccess, CancellationToken ct)
+    {
+        var id = householdId ?? await householdAccess.ResolveDefaultAsync(ct);
+        if (id is null || id == Guid.Empty)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await householdAccess.CanAccessAsync(id.Value, ct))
+        {
+            return Results.Json(new { error = "このご家庭のデータにアクセスする権限がありません。" }, statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        // Materialized before projecting: Name/Room are the display values, which are
+        // computed from the override columns and so cannot be evaluated in SQL.
+        var rows = await db.Devices.Where(d => d.HouseholdId == id.Value).ToListAsync(ct);
+
+        var devices = rows
+            .OrderBy(d => d.DisplayName, StringComparer.Ordinal)
+            .Select(d => new
+            {
+                d.Id,
+                Name = d.DisplayName,
+                d.Alias,
+                Room = d.DisplayRoom,
+                ProviderName = d.Name,
+                ProviderRoom = d.Room,
+                DeviceType = d.DeviceType.ToString(),
+                Provider = d.Provider.ToString(),
+                d.IsEnabled,
+                d.RemoteControlAllowed,
+                SafetyClass = d.SafetyClass.ToString()
+            })
+            .ToList();
+
+        return Results.Ok(devices);
+    }
+
+    /// <summary>
+    /// Single device by id, scoped to the caller's household for the same reason as
+    /// <see cref="ListDevicesAsync"/>.
+    /// </summary>
+    internal static async Task<IResult> GetDeviceAsync(
+        Guid id, AppDbContext db, HouseholdAccessService householdAccess, CancellationToken ct)
+    {
+        var device = await db.Devices.FirstOrDefaultAsync(d => d.Id == id, ct);
+        if (device is null)
+        {
+            return Results.NotFound();
+        }
+
+        // 404 rather than 403 for a device in someone else's household: answering
+        // "forbidden" would confirm the id exists, which is itself a disclosure.
+        if (!await householdAccess.CanAccessAsync(device.HouseholdId, ct))
+        {
+            return Results.NotFound();
+        }
+
+        var lastEvent = await db.DeviceEvents
+            .Where(e => e.DeviceId == id)
+            .OrderByDescending(e => e.OccurredAtUtc)
+            .FirstOrDefaultAsync(ct);
+
+        return Results.Ok(new
+        {
+            device.Id,
+            Name = device.DisplayName,
+            device.Alias,
+            Room = device.DisplayRoom,
+            ProviderName = device.Name,
+            ProviderRoom = device.Room,
+            DeviceType = device.DeviceType.ToString(),
+            Provider = device.Provider.ToString(),
+            device.IsEnabled,
+            device.RemoteControlAllowed,
+            SafetyClass = device.SafetyClass.ToString(),
+            LastState = lastEvent?.State,
+            LastEventUtc = lastEvent?.OccurredAtUtc
+        });
     }
 }

@@ -78,8 +78,20 @@ public static class AssistantKnowledgeBase
     /// could be a family member asking about the records, so that entry waits until the
     /// model has already called the message small talk.
     /// </param>
+    /// <param name="Excludes">
+    /// Words that veto a match outright.
+    ///
+    /// Some keywords are the right trigger for this product and an ordinary Japanese word
+    /// everywhere else. 「費用」 means the app's own price here but the cost of a care home
+    /// in 「施設の費用の相場はいくら」, and 「使い方」 means product help here but electricity
+    /// consumption in 「電気の使い方が増えている」. Both were measured answering the wrong
+    /// question in docs/eval/intent-accuracy.md. Rather than delete the keyword — which
+    /// would break 「料金はかかりますか」 and 「使い方」, the word the app itself tells people
+    /// to send — the entry names the company it must not keep.
+    /// </param>
     private sealed record FaqEntry(
-        string Id, string Reply, string[][] StrictGroups, string[] LooseKeywords, bool PreIntent);
+        string Id, string Reply, string[][] StrictGroups, string[] LooseKeywords, bool PreIntent,
+        string[]? Excludes = null);
 
     /// <summary>
     /// Ordered; the first entry that matches answers. Specific worries are listed before
@@ -242,7 +254,14 @@ public static class AssistantKnowledgeBase
                 ["有料"], ["課金"], ["請求"], ["いくら", "かかり"], ["費用"], ["支払"]
             ],
             [],
-            PreIntent: true),
+            PreIntent: true,
+            // Money questions about the resident's own life -- care fees, hospital bills,
+            // the electricity bill -- are not questions about what this LINE costs.
+            Excludes:
+            [
+                "介護", "施設", "老人ホーム", "ホーム", "入院", "病院", "医療", "手術",
+                "年金", "相続", "保険", "税金", "電気", "水道", "ガス", "家賃"
+            ]),
 
         new(
             "who-sees",
@@ -338,7 +357,10 @@ public static class AssistantKnowledgeBase
                 ["このline", "何"], ["このline", "なに"], ["わからない", "使"]
             ],
             ["使い方", "ヘルプ", "説明", "メニュー"],
-            PreIntent: true)
+            PreIntent: true,
+            // 「電気の使い方」「お金の使い方」「時間の使い方」 are about how the resident lives,
+            // not about how this app works.
+            Excludes: ["電気", "お金", "水", "ガス", "時間", "体", "からだ"])
     ];
 
     /// <summary>
@@ -408,6 +430,12 @@ public static class AssistantKnowledgeBase
         foreach (var entry in Entries)
         {
             if (mode == FaqMatchMode.Strict && !entry.PreIntent)
+            {
+                continue;
+            }
+
+            if (entry.Excludes is { Length: > 0 } excludes
+                && excludes.Any(k => normalized.Contains(Normalize(k), StringComparison.Ordinal)))
             {
                 continue;
             }

@@ -251,6 +251,26 @@ public class AiRequestLog
     /// </remarks>
     public string? Error { get; set; }
 
+    /// <summary>Tokens billed for the request, as reported by the service.</summary>
+    /// <remarks>
+    /// Null for a failed call, and for backends that report no usage (the mock router),
+    /// and for every row written before these columns existed -- so aggregates must sum
+    /// what is present rather than assume coverage. Persisted per call rather than only
+    /// aggregated because "which purpose costs the most" is the question that actually
+    /// drives prompt work, and that cannot be reconstructed from a running total.
+    /// </remarks>
+    public int? PromptTokens { get; set; }
+
+    /// <summary>Tokens billed for the generated text. Null under the same conditions as <see cref="PromptTokens"/>.</summary>
+    public int? CompletionTokens { get; set; }
+
+    /// <summary>
+    /// Service-reported total. Stored as given rather than derived from the other two:
+    /// for some models it includes tokens that appear in neither (e.g. reasoning tokens),
+    /// so recomputing it would silently under-report the bill.
+    /// </summary>
+    public int? TotalTokens { get; set; }
+
     public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 }
 

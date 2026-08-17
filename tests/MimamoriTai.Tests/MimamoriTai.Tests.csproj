@@ -21,6 +21,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The evaluation set is read at runtime by IntentEvaluationHarness. -->
+    <Content Include="Eval\intent-cases.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\MimamoriTai.Core\MimamoriTai.Core.csproj" />
     <ProjectReference Include="..\..\src\MimamoriTai.Infrastructure\MimamoriTai.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\MimamoriTai.Web\MimamoriTai.Web.csproj" />

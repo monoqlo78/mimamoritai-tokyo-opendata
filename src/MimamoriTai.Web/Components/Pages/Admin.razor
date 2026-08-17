@@ -209,6 +209,8 @@ else
                             <th>件数</th>
                             <th>失敗</th>
                             <th>平均応答</th>
+                            <th>トークン計</th>
+                            <th>1件あたり</th>
                             <th>直近の失敗理由</th>
                         </tr>
                     </thead>
@@ -221,6 +223,23 @@ else
                                 <td>@usage.Requests</td>
                                 <td class="@(usage.Failures > 0 ? "danger" : "")">@usage.Failures</td>
                                 <td>@usage.AverageDurationMs.ToString("F0") ms</td>
+                                @* A dash rather than "0" when nothing in the window reported
+                                   usage: a zero here would read as "this model is free". *@
+                                <td>@(usage.MeteredRequests == 0 ? "—" : usage.TotalTokens.ToString("N0"))</td>
+                                <td>
+                                    @if (usage.MeteredRequests == 0)
+                                    {
+                                        <span>—</span>
+                                    }
+                                    else
+                                    {
+                                        <span>@usage.AverageTokensPerRequest.ToString("F0")</span>
+                                        @if (usage.MeteredRequests < usage.Requests)
+                                        {
+                                            <span class="small muted"> （@usage.MeteredRequests/@usage.Requests 件）</span>
+                                        }
+                                    }
+                                </td>
                                 <td class="small">@(usage.LastError ?? "—")</td>
                             </tr>
                         }

@@ -496,4 +496,59 @@ public sealed class AzureModelRouterClientTests(Xunit.Abstractions.ITestOutputHe
             "https://mimamoritai-test.openai.azure.com/",
             new AzureModelRouterOptions { Endpoint = Endpoint }.BuildBaseAddress());
     }
+
+    /// <summary>
+    /// The service reports billed tokens in every successful completion, but the response
+    /// DTO did not declare <c>usage</c>, so the counts were parsed away and never reached
+    /// the app. That left every prompt-size decision unmeasurable -- there was no number to
+    /// compare a "shorter prompt" against. These three cases pin the counts through.
+    /// </summary>
+    [Fact]
+    public async Task Reads_the_token_usage_the_service_reports()
+    {
+        var body = JsonSerializer.Serialize(new
+        {
+            model = "gpt-4.1-mini-2025-04-14",
+            choices = new[] { new { message = new { role = "assistant", content = "こんにちは" } } },
+            usage = new { prompt_tokens = 812, completion_tokens = 96, total_tokens = 908 }
+        });
+
+        var client = Create(new ScriptedHandler().Then(HttpStatusCode.OK, body));
+
+        var result = await client.CompleteAsync(Prompt(), "intent");
+
+        Assert.True(result.Success);
+        Assert.Equal(812, result.PromptTokens);
+        Assert.Equal(96, result.CompletionTokens);
+
+        // Taken as reported rather than recomputed: for some models the total includes
+        // tokens counted in neither field, and re-deriving it would under-report the bill.
+        Assert.Equal(908, result.TotalTokens);
+    }
+
+    [Fact]
+    public async Task Reports_no_tokens_when_the_service_omits_usage()
+    {
+        var client = Create(new ScriptedHandler().Then(HttpStatusCode.OK, Ok()));
+
+        var result = await client.CompleteAsync(Prompt(), "intent");
+
+        // Null, not zero: "not reported" and "cost nothing" must stay distinguishable, or
+        // an aggregate over old rows reads as a free model.
+        Assert.True(result.Success);
+        Assert.Null(result.PromptTokens);
+        Assert.Null(result.CompletionTokens);
+        Assert.Null(result.TotalTokens);
+    }
+
+    [Fact]
+    public async Task Reports_no_tokens_for_a_failed_call()
+    {
+        var client = Create(new ScriptedHandler().Then(HttpStatusCode.Unauthorized, "{}"));
+
+        var result = await client.CompleteAsync(Prompt(), "intent");
+
+        Assert.False(result.Success);
+        Assert.Null(result.TotalTokens);
+    }
 }

@@ -45,7 +45,28 @@ public sealed record AdminAiUsageRow(
     int Failures,
     double AverageDurationMs,
     /// <summary>Most recent failure reason in the window, null when nothing failed.</summary>
-    string? LastError);
+    string? LastError,
+    /// <summary>Sum of the prompt tokens the service reported in the window.</summary>
+    long PromptTokens,
+    /// <summary>Sum of the completion tokens the service reported in the window.</summary>
+    long CompletionTokens,
+    /// <summary>
+    /// How many of <see cref="Requests"/> actually carried a usage block. Shown next to
+    /// the totals because rows written before token capture existed report nothing, and a
+    /// sum over partial coverage would otherwise read as the whole bill.
+    /// </summary>
+    int MeteredRequests)
+{
+    /// <summary>Total billed tokens in the window. Zero when nothing in it was metered.</summary>
+    public long TotalTokens => PromptTokens + CompletionTokens;
+
+    /// <summary>
+    /// Mean tokens per metered call: the number a prompt-shortening change is supposed to
+    /// move, and the only one comparable across windows of different traffic.
+    /// </summary>
+    public double AverageTokensPerRequest =>
+        MeteredRequests == 0 ? 0 : (double)TotalTokens / MeteredRequests;
+}
 
 public sealed record AdminConsoleModel(
     int WindowDays,
@@ -269,14 +290,20 @@ public sealed class AdminConsoleService(
                     .Where(l => !l.Success && l.Error != null)
                     .OrderByDescending(l => l.CreatedAtUtc)
                     .Select(l => l.Error)
-                    .FirstOrDefault()
+                    .FirstOrDefault(),
+                // Summed with a null-coalescing default rather than filtered, so the row
+                // still reports its request count when none of its calls were metered.
+                PromptTokens = g.Sum(l => (long?)l.PromptTokens ?? 0L),
+                CompletionTokens = g.Sum(l => (long?)l.CompletionTokens ?? 0L),
+                MeteredRequests = g.Count(l => l.TotalTokens != null)
             })
             .ToListAsync(ct);
 
         var aiUsage = aiUsageRaw
             .OrderByDescending(r => r.Requests)
             .Select(r => new AdminAiUsageRow(
-                r.Router, r.ResolvedModel, r.Requests, r.Failures, r.AverageDurationMs, r.LastError))
+                r.Router, r.ResolvedModel, r.Requests, r.Failures, r.AverageDurationMs, r.LastError,
+                r.PromptTokens, r.CompletionTokens, r.MeteredRequests))
             .ToList();
 
         var userCount = await db.AppUsers.CountAsync(ct);

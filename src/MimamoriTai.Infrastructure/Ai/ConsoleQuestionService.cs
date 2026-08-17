@@ -133,6 +133,9 @@ public sealed class ConsoleQuestionService(
                 DurationMs = result.DurationMs,
                 Success = result.Success,
                 Error = result.Success ? null : Truncate(result.Error, 256),
+                PromptTokens = result.PromptTokens,
+                CompletionTokens = result.CompletionTokens,
+                TotalTokens = result.TotalTokens,
                 CreatedAtUtc = clock.GetUtcNow()
             });
 

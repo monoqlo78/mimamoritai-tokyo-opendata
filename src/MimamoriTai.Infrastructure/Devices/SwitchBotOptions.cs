@@ -45,6 +45,31 @@ public sealed class SwitchBotOptions
     /// </summary>
     public bool AllowGlobalFallback { get; set; }
 
+    /// <summary>
+    /// Shared secret the SwitchBot webhook callback must present, as either the
+    /// <c>X-Webhook-Token</c> header or a <c>?token=</c> query value on the callback URL.
+    /// </summary>
+    /// <remarks>
+    /// SwitchBot's webhook, unlike LINE's, does not sign its payloads at all -- there is
+    /// no counterpart to <c>X-Line-Signature</c> to verify. Until this was added the
+    /// endpoint accepted anything, so anyone who guessed the URL could post a fabricated
+    /// state change for a known device id and keep the inactivity watchdog quiet, which
+    /// is the one failure this app must never have. Since SwitchBot lets the callback URL
+    /// be arbitrary, a secret carried on that URL is the mechanism actually available.
+    /// Empty means unconfigured, which is refused unless
+    /// <see cref="AllowUnauthenticatedWebhook"/> is explicitly set.
+    /// </remarks>
+    public string WebhookSecret { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Escape hatch for local development: accept SwitchBot webhook callbacks with no
+    /// secret. Defaults to false so a deployment cannot end up unauthenticated by simply
+    /// forgetting to set <see cref="WebhookSecret"/>. Losing callbacks is safe -- the
+    /// poller re-reads device state on <see cref="PollIntervalMinutes"/> -- whereas
+    /// accepting forged ones is not.
+    /// </summary>
+    public bool AllowUnauthenticatedWebhook { get; set; }
+
     public bool IsConfigured =>
         Enabled && !string.IsNullOrWhiteSpace(Token) && !string.IsNullOrWhiteSpace(Secret);
 }

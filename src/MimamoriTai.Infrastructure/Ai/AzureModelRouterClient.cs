@@ -156,7 +156,12 @@ public sealed class AzureModelRouterClient(
                 resolvedModel = body.Model;
             }
 
-            return (new AiCompletionResult(true, content, DisplayName, resolvedModel, sw.ElapsedMilliseconds), null);
+            return (new AiCompletionResult(
+                true, content, DisplayName, resolvedModel, sw.ElapsedMilliseconds,
+                Error: null,
+                PromptTokens: body?.Usage?.PromptTokens,
+                CompletionTokens: body?.Usage?.CompletionTokens,
+                TotalTokens: body?.Usage?.TotalTokens), null);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -284,6 +289,21 @@ public sealed class AzureModelRouterClient(
     {
         [JsonPropertyName("model")] public string? Model { get; set; }
         [JsonPropertyName("choices")] public List<Choice>? Choices { get; set; }
+
+        /// <summary>
+        /// The service reports billed tokens here on every successful completion. It was
+        /// simply not being read, which meant nothing downstream could state the cost of a
+        /// call -- so prompt-size work had no unit of measurement. Absent on error
+        /// responses, hence nullable all the way through.
+        /// </summary>
+        [JsonPropertyName("usage")] public TokenUsage? Usage { get; set; }
+    }
+
+    private sealed class TokenUsage
+    {
+        [JsonPropertyName("prompt_tokens")] public int? PromptTokens { get; set; }
+        [JsonPropertyName("completion_tokens")] public int? CompletionTokens { get; set; }
+        [JsonPropertyName("total_tokens")] public int? TotalTokens { get; set; }
     }
 
     private sealed class Choice
