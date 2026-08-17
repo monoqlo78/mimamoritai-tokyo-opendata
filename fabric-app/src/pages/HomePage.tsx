@@ -54,6 +54,7 @@ import {
   type HouseholdRow,
   type OutdoorRow,
 } from '@/services/monitoring';
+import { isDemoCapture } from '@/services/bootstrap';
 import { isLocalBackend } from '@/services/rayfinClient';
 
 export function HomePage() {
@@ -183,14 +184,21 @@ export function HomePage() {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-8 space-y-6">
-        {isLocalBackend() && (
+        {isDemoCapture() && (
+          <div className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            収録用の表示です。{SNAPSHOT_TAKEN_AT.toLocaleString('ja-JP')} 時点で
+            Microsoft Fabric の本番データベースから抽出したスナップショットを表示しています。
+          </div>
+        )}
+
+        {!isDemoCapture() && isLocalBackend() && (
           <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             ローカル開発モードです。Fabric のバックエンドが未接続のため、
             サンプルデータを表示しています。
           </div>
         )}
 
-        {!isLocalBackend() && origin === 'snapshot' && (
+        {!isDemoCapture() && !isLocalBackend() && origin === 'snapshot' && (
           <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <span className="font-semibold">Fabric SQL に接続できていません。</span>{' '}
             {SNAPSHOT_TAKEN_AT.toLocaleString('ja-JP')} 時点で本番データベースから

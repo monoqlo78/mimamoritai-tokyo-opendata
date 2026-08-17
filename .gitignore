@@ -22,6 +22,7 @@ project.fragment.lock.json
 .env
 .env.*
 !.env.example
+!fabric-app/.env.capture.example
 appsettings.Local.json
 appsettings.*.Local.json
 secrets.json
@@ -85,3 +86,8 @@ scripts/local-env.ps1
 
 ## Node（scripts/build-deck.js の pptxgenjs 用。リポジトリには入れない）
 node_modules/
+
+## デモ動画の中間生成物（録画の生データ・合成音声・トリム前の映像）
+docs/demo/out/
+docs/demo/tts/
+docs/demo/base.mp4

@@ -183,7 +183,8 @@ const NODES: FlowNode[] = [
     // The C# background service in the web app, not the ps1 used to bootstrap
     // the Fabric SQL side once.
     subtitle: 'FabricConsoleSync / 15分ごと',
-    metric: (s) => (s.origin === 'fabric' ? '読み取り専用' : '停止中'),
+    metric: (s) =>
+      s.origin === 'fabric' ? '読み取り専用' : s.origin === 'snapshot' ? 'スナップショット' : '停止中',
     accent: 'fabric',
   },
   {
@@ -193,7 +194,11 @@ const NODES: FlowNode[] = [
     title: 'Fabric SQL Database',
     subtitle: 'Rayfin プロビジョニング',
     metric: (s) =>
-      s.origin === 'fabric' ? `${s.households + s.alerts + s.fabricRows} 行` : '接続不可',
+      s.origin === 'fabric'
+        ? `${s.households + s.alerts + s.fabricRows} 行`
+        : s.origin === 'snapshot'
+          ? 'スナップショット'
+          : '接続不可',
     accent: 'fabric',
   },
   {
