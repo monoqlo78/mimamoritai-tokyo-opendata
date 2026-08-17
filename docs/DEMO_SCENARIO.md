@@ -10,9 +10,11 @@
 
 この台本で実際に収録した動画がリポジトリに入っています。
 
-- **[docs/demo/mimamoritai-demo.mp4](demo/mimamoritai-demo.mp4)**（1920x1080 / 24fps / 3分11秒 / 約3.7MB・字幕焼き込み）
-- 収録方法: 本番環境を Edge のアプリモード（`--app=<URL>` ＋専用プロファイル）で開き、`ffmpeg -f gdigrab` で画面録画。操作は Windows Computer Use MCP から実行
+- **[docs/demo/mimamoritai-demo.mp4](demo/mimamoritai-demo.mp4)**（1920x1080 / 25fps / 3分27秒 / 約10MB・ナレーション＋字幕焼き込み）— **提出する本編**。気温×電力グラフ、AI への質問と実際の回答、家電の状態、接続状況までを含む現行仕様の回。収録は Playwright（`docs/demo/record.js`）で自動化しています
+- **[docs/demo/mimamoritai-demo-voice-safety.mp4](demo/mimamoritai-demo-voice-safety.mp4)**（1920x1080 / 24fps / 3分11秒 / 約8.8MB）— この台本どおりの回。音声操作と、火を使う家電での安全確認が入っています。本番環境を Edge のアプリモード（`--app=<URL>` ＋専用プロファイル）で開き、`ffmpeg -f gdigrab` で画面録画したもの
 - **審査後に Azure リソースを停止しても、この動画だけは残ります**
+
+> 公開先の YouTube（https://youtu.be/TnM-RHFZ_Lc ）は、まだ下の「音声操作と安全確認」の回のままです。本編を差し替える場合はアップロードし直してください。
 
 ## この動画で伝えること（順番を守る）
 

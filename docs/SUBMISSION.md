@@ -140,7 +140,8 @@
 | 提出物 | 状態 | 場所 |
 |---|---|---|
 | プレゼン資料 | 更新済み（16枚・16:9・8/17時点／テスト件数1,004に更新） | `docs/mimamoritai-deck.pptx` / `.pdf` |
-| デモ動画（3分） | 収録済み | `docs/demo/mimamoritai-demo.mp4` |
+| デモ動画（3分27秒） | 収録済み（気温×電力・AI質問回答を含む現行仕様で再収録／ナレーション・字幕あり・BGMなし） | `docs/demo/mimamoritai-demo.mp4` |
+| 〃 参考：音声操作と安全確認の回 | 収録済み（旧収録・本編に無い挙動の記録） | `docs/demo/mimamoritai-demo-voice-safety.mp4` |
 | 2分プレゼン動画 | **未収録**（8/26〜8/30に収録） | — |
 | 画面キャプチャ3点 | 取得済み（8/16時点） | `docs/captures/` |
 | 開発記録 | 公開済み | `docs/ARTICLE.md` |
