@@ -201,6 +201,110 @@ public class WatchAlertServiceTests
     }
 
     /// <summary>
+    /// The gap this fixes. The alert used to be built from the risk level and the rule's
+    /// reason alone, which says what fired and nothing else -- so a daughter at work read
+    /// 「活動量が少なめです」 and still had to ring the house to find out whether it meant
+    /// an hour late or a whole morning gone. The three things that answer that were
+    /// already loaded when the alert was raised; these lock in that they are used.
+    /// </summary>
+    [Fact]
+    public void Briefing_says_when_it_was_observed_how_it_compares_and_what_to_do()
+    {
+        var briefing = SampleBriefing();
+
+        var text = briefing.Compose();
+
+        // When.
+        Assert.Contains("09:30", text);
+
+        // How far from ordinary -- the question the finding on its own leaves open.
+        Assert.Contains("07:10", text);
+
+        // What the family can actually do about it, naming the button and the appliance
+        // -- the whole point of the app being able to switch it on remotely.
+        Assert.Contains("冷房をつける", text);
+        Assert.Contains("リビングのエアコン", text);
+
+        // The internal score is not a thing a family can act on.
+        Assert.DoesNotContain("スコア", text);
+        Assert.DoesNotContain("55", text);
+
+        // "／" is how the rules join independent findings; read aloud it is a stumble.
+        Assert.DoesNotContain("／", text);
+    }
+
+    /// <summary>
+    /// The model can only cite a figure it was given. The old fact block held four
+    /// fields, none of them a measurement, which is why the wording it produced never
+    /// contained one.
+    /// </summary>
+    [Fact]
+    public void Briefing_facts_carry_the_measurements_the_wording_needs()
+    {
+        var facts = SampleBriefing().Facts();
+
+        Assert.Contains("暑さ指数31.2", facts);
+        Assert.Contains("気温34.5℃", facts);
+        Assert.Contains("普段は07:10ごろ", facts);
+        Assert.Contains("普段は1日", facts);
+        Assert.Contains("冷房をつける", facts);
+    }
+
+    /// <summary>
+    /// A household with no plug has no baseline, and WBGT is not published in winter.
+    /// The wording is assembled from whichever facts exist, because a sentence with a
+    /// blank where a number should be is worse than not saying it.
+    /// </summary>
+    [Fact]
+    public void Briefing_omits_what_it_cannot_measure_rather_than_guessing()
+    {
+        var bare = new AlertBriefing(
+            "母", new RiskResult(RiskLevel.Medium, 30, "普段より活動量が少なめです"),
+            new TimeOnly(9, 30), null, null, null, null, null, null, null, null, null);
+
+        var facts = bare.Facts();
+        Assert.DoesNotContain("屋外", facts);
+        Assert.DoesNotContain("普段は", facts);
+        Assert.DoesNotContain("アプリでできること", facts);
+
+        // Still ends with something the reader can do, even with nothing to suggest.
+        Assert.Contains("お電話", bare.Compose());
+    }
+
+    /// <summary>
+    /// The rules already phrase several findings as a comparison ("普段より活動量が
+    /// 少なめです"). Adding our own comparison on top of one would say the same thing
+    /// twice in a message that has three sentences to work with.
+    /// </summary>
+    [Fact]
+    public void Briefing_does_not_repeat_a_comparison_the_rule_already_made()
+    {
+        var text = (SampleBriefing() with
+        {
+            Risk = new RiskResult(RiskLevel.High, 55, "普段より活動量が少なめです")
+        }).Compose();
+
+        Assert.DoesNotContain("07:10", text);
+    }
+
+    private static AlertBriefing SampleBriefing() =>
+        new(
+            ResidentName: "母",
+            Risk: new RiskResult(RiskLevel.High, 55, "活動量が少なめです／エアコンが動いていません"),
+            NowLocal: new TimeOnly(9, 30),
+            AreaName: "東京",
+            OutdoorTemperatureC: 34.5,
+            Wbgt: 31.2,
+            WeatherLevelText: "危険",
+            TodayWh: 120.0,
+            UsualWh: 940.0,
+            FirstActivityToday: new TimeOnly(9, 5),
+            UsualFirstActivity: new TimeOnly(7, 10),
+            Suggestion: new ComfortSuggestion(
+                "冷房をつけますか？", "暑さ指数31.2（危険）です。リビングのエアコンが動いていません",
+                "冷房をつける", "リビングのエアコン", "living-ac", true, false));
+
+    /// <summary>
     /// The case this feature exists for. A warning is out, and the meters say the house
     /// has drawn almost nothing for hours -- which most often means she is not in it.
     /// Neither figure means much alone; together they are the one push in this app worth
@@ -462,8 +566,16 @@ public class WatchAlertServiceTests
         Assert.Equal(RiskLevel.High, outcome.Risk!.Level);
         Assert.Single(line.Pushed);
         Assert.Equal("test-family-group", line.Pushed[0].To);
-        Assert.Contains("見守りアラート", line.Pushed[0].Text);
-        Assert.Contains(outcome.Risk.Score.ToString(), line.Pushed[0].Text);
+        Assert.Contains("母さん", line.Pushed[0].Text);
+
+        // The alert has to say *when* it was observed. Without it, "活動がありません" is
+        // read the same at 07:00 as at 15:00, and only one of those is worth acting on.
+        Assert.Contains("11:00", line.Pushed[0].Text);
+
+        // The risk score is an implementation detail of the rules. Printing "60/100" to
+        // a family invites a comparison between two alerts whose causes are unrelated,
+        // and tells them nothing they can act on.
+        Assert.DoesNotContain("スコア", line.Pushed[0].Text);
         Assert.Single(db.Context.WatchAlerts);
         Assert.True(db.Context.WatchAlerts.Single().Success);
     }

@@ -49,6 +49,215 @@ public enum WatchAlertStatus
     NoResident
 }
 
+/// <summary>
+/// The facts behind one alert, gathered in one place so that the deterministic wording
+/// and the model-written wording are built from exactly the same picture.
+///
+/// <para>
+/// This exists because of what the alert used to be. The message was composed from the
+/// resident's name, the risk level and <see cref="RiskResult.Reason"/> alone, which is
+/// enough to say <em>what rule fired</em> and nothing else. A daughter at work reading
+/// 「活動量が少なめです」 cannot tell whether that means an hour late or a whole morning
+/// gone, whether it is 35℃ outside, or what she is supposed to do about it -- so the
+/// alert ended with a phone call to find out. The figures that answer all three were
+/// already loaded a few lines above; they simply were not being passed along.
+/// </para>
+///
+/// <para>
+/// Every field is optional on purpose. A household with no registered plug has no
+/// baseline, and WBGT is not published in winter. The wording is assembled from
+/// whichever facts exist rather than from a fixed template with holes in it, because a
+/// sentence with a blank where a number should be is worse than not saying it at all.
+/// </para>
+/// </summary>
+internal sealed record AlertBriefing(
+    string ResidentName,
+    RiskResult Risk,
+    TimeOnly NowLocal,
+    string? AreaName,
+    double? OutdoorTemperatureC,
+    double? Wbgt,
+    string? WeatherLevelText,
+    double? TodayWh,
+    double? UsualWh,
+    TimeOnly? FirstActivityToday,
+    TimeOnly? UsualFirstActivity,
+    ComfortSuggestion? Suggestion)
+{
+    public static AlertBriefing From(
+        string residentName,
+        RiskResult risk,
+        TimeOnly nowLocal,
+        DailyActivity today,
+        IReadOnlyList<DailyActivity> recent,
+        HeatAdvisory? heat,
+        ColdAdvisory? cold,
+        ComfortSuggestion? suggestion)
+    {
+        // Days with no data at all are not an "ordinary day" to compare against; they
+        // are days the plug was unplugged. Including them would drag the norm towards
+        // zero and make a perfectly normal morning look like a quiet one.
+        var reference = recent
+            .Where(d => d.Date != today.Date && d.DeviceUsageCount > 0)
+            .ToList();
+
+        var usualWh = reference.Count > 0 && reference.Any(d => d.EnergyWh > 0)
+            ? reference.Where(d => d.EnergyWh > 0).Average(d => d.EnergyWh)
+            : (double?)null;
+
+        var starts = reference
+            .Where(d => d.FirstActivityTime is not null)
+            .Select(d => d.FirstActivityTime!.Value.ToTimeSpan().TotalMinutes)
+            .ToList();
+
+        var usualStart = starts.Count > 0
+            ? TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(starts.Average()))
+            : (TimeOnly?)null;
+
+        // Heat and cold never both apply: WBGT is only published in the warm half of the
+        // year, and the cold advisory is only meaningful below it. Whichever the rules
+        // were actually looking at is the one worth quoting.
+        return new AlertBriefing(
+            residentName,
+            risk,
+            nowLocal,
+            heat?.AreaName ?? cold?.AreaName,
+            heat?.TemperatureC ?? cold?.TemperatureC,
+            heat?.Wbgt,
+            heat is not null ? heat.LevelText : cold?.LevelText,
+            today.EnergyWh > 0 ? today.EnergyWh : null,
+            usualWh,
+            today.FirstActivityTime,
+            usualStart,
+            suggestion);
+    }
+
+    /// <summary>
+    /// The facts as labelled lines for the model. Deliberately not prose: a list of
+    /// measurements cannot be mistaken for a sentence to copy, and anything absent is
+    /// simply not a line, so there is nothing for the model to fill in.
+    /// </summary>
+    public string Facts()
+    {
+        var lines = new List<string>
+        {
+            $"対象: {ResidentName}",
+            $"現在時刻: {NowLocal:HH\\:mm}",
+            $"危険度: {Risk.Level}",
+            $"検知内容: {Risk.Reason}"
+        };
+
+        if (AreaName is { Length: > 0 } area)
+        {
+            var outdoor = $"屋外({area}):";
+            if (OutdoorTemperatureC is { } t) outdoor += $" 気温{t:0.#}℃";
+            if (Wbgt is { } w) outdoor += $" 暑さ指数{w:0.#}";
+            if (WeatherLevelText is { Length: > 0 } level) outdoor += $"（{level}）";
+
+            if (outdoor.Length > $"屋外({area}):".Length)
+            {
+                lines.Add(outdoor);
+            }
+        }
+
+        if (FirstActivityToday is { } first)
+        {
+            lines.Add(UsualFirstActivity is { } usualStart
+                ? $"今日の最初の家電利用: {first:HH\\:mm}（普段は{usualStart:HH\\:mm}ごろ）"
+                : $"今日の最初の家電利用: {first:HH\\:mm}");
+        }
+        else if (UsualFirstActivity is { } usualOnly)
+        {
+            lines.Add($"今日はまだ家電の利用がありません（普段は{usualOnly:HH\\:mm}ごろ）");
+        }
+
+        if (TodayWh is { } wh)
+        {
+            lines.Add(UsualWh is { } usual
+                ? $"今日の電力量: {wh:0.#}Wh（普段は1日{usual:0.#}Wh）"
+                : $"今日の電力量: {wh:0.#}Wh");
+        }
+
+        if (Suggestion is { } s)
+        {
+            lines.Add(s.CanTurnOnRemotely
+                ? $"アプリでできること: 「{s.ActionLabel}」を押すと{s.DeviceName}を操作できます"
+                : $"アプリでできること: {s.DeviceName}は遠隔操作しない設定のため、お電話での声かけが必要です");
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// The wording used when no model is available, or when what the model wrote was
+    /// rejected. Not a placeholder: this is what most families actually receive on a
+    /// day the router is busy, so it is written to be worth reading on its own.
+    ///
+    /// <para>
+    /// The risk score is deliberately absent. 「スコア 55/100」 tells a family nothing
+    /// they can act on -- it is an implementation detail of the rules, and reading it
+    /// as a severity invites exactly the wrong comparison between two alerts whose
+    /// causes are unrelated.
+    /// </para>
+    /// </summary>
+    public string Compose()
+    {
+        // Reason is a "／"-joined list of independent findings. Read out loud that
+        // separator is a stumble, and the findings are sentences, so they are set as
+        // sentences -- trimming any full stop a rule already supplied so joining them
+        // cannot produce "。。".
+        var findings = Risk.Reason
+            .Split('／', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(f => f.TrimEnd('。'))
+            .Where(f => f.Length > 0)
+            .ToArray();
+
+        var body = findings.Length > 0 ? string.Join("。", findings) : "いつもと違うようすが見られます";
+
+        var parts = new List<string>
+        {
+            $"{ResidentName}さんのお宅の{NowLocal:HH\\:mm}時点のようすです。{body}。"
+        };
+
+        // How far from ordinary this is -- the question the finding on its own leaves
+        // open. Skipped when a rule already made the comparison, so the message does not
+        // say the same thing twice.
+        if (!Risk.Reason.Contains("普段", StringComparison.Ordinal)
+            && UsualFirstActivity is { } usualStart)
+        {
+            if (FirstActivityToday is null)
+            {
+                parts.Add($"普段は{usualStart:HH\\:mm}ごろには家電が使われています。");
+            }
+            else if (FirstActivityToday.Value.ToTimeSpan() - usualStart.ToTimeSpan() >= TimeSpan.FromHours(1))
+            {
+                parts.Add(
+                    $"今日はじめて家電が使われたのは{FirstActivityToday.Value:HH\\:mm}で、"
+                    + $"普段の{usualStart:HH\\:mm}ごろより遅めでした。");
+            }
+        }
+
+        // Only worth saying when it adds something the finding did not: the rules
+        // already quote the outdoor figure whenever they were the reason it fired.
+        if (OutdoorTemperatureC is { } temperature
+            && AreaName is { Length: > 0 } area
+            && !Risk.Reason.Contains("気温", StringComparison.Ordinal)
+            && !Risk.Reason.Contains("暑さ指数", StringComparison.Ordinal))
+        {
+            parts.Add($"{area}の外気温は{temperature:0.#}℃です。");
+        }
+
+        parts.Add(Suggestion switch
+        {
+            { CanTurnOnRemotely: true } s => $"アプリの「{s.ActionLabel}」から{s.DeviceName}を操作できます。",
+            { } s => $"{s.DeviceName}は遠隔操作しない設定です。お電話で声をかけてあげてください。",
+            _ => "気になるようでしたら、一度お電話してみてください。"
+        });
+
+        return string.Concat(parts);
+    }
+}
+
 public sealed record WatchAlertOutcome(
     WatchAlertStatus Status,
     RiskResult? Risk,
@@ -137,7 +346,11 @@ public sealed class WatchAlertService(
                     null);
             }
 
-            var text = await BuildMessageAsync(resident.DisplayName, risk, ct);
+            var briefing = AlertBriefing.From(
+                resident.DisplayName, risk, nowLocal, today, recent, heat, cold,
+                ComfortSuggestion.For(heat, cooling, cold, heating));
+
+            var text = await BuildMessageAsync(briefing, ct);
             var recipients = await recipientResolver.ResolveAsync(householdId, ct);
             var card = BuildCard(risk, text);
             var aggregateResult = await PushToAllAsync(recipients, card, ct);
@@ -538,19 +751,63 @@ public sealed class WatchAlertService(
     }
 
     /// <summary>
-    /// Maximum length accepted from the model. LINE renders long pushes poorly and an
-    /// over-long reply is a signal the model ignored the instruction, so we fall back.
+    /// Longest text accepted from the model.
+    ///
+    /// <para>
+    /// This used to be 120 while the prompt asked for 60, and the prompt won: the model
+    /// wrote one short line, which is only ever enough to restate the rule that fired.
+    /// The ceiling now matches what the prompt actually asks for -- three short lines --
+    /// and still exists for the same reason as before: a reply far over the limit means
+    /// the model ignored the instruction, and text that long renders badly in a LINE
+    /// push, so it is safer to send the deterministic wording instead.
+    /// </para>
     /// </summary>
-    private const int MaxAiMessageLength = 120;
+    private const int MaxAiMessageLength = 220;
+
+    /// <summary>
+    /// What the alert has to achieve, written down so the prompt and the fallback are
+    /// held to the same standard.
+    ///
+    /// <para>
+    /// The failure this is written against is a message that is accurate and useless.
+    /// 「活動量が少なめです」 is true, and leaves the reader with no idea whether to
+    /// carry on with their meeting or leave it. Three things fix that, and all three
+    /// are facts we already hold: <em>when</em> this was observed, <em>how far from
+    /// ordinary</em> it is, and <em>what the reader can do next</em> -- including,
+    /// when there is one, the button in the app that fixes it without a phone call.
+    /// </para>
+    /// </summary>
+    private const string AlertPrompt = """
+        あなたは高齢者見守りサービス「見守り隊」の通知文を書く日本語アシスタントです。
+        離れて暮らすご家族（息子・娘）に送るLINEメッセージを1通書いてください。
+
+        構成（3文、合計140文字程度）:
+        1文目 いつ何が起きたか。時刻と、観測された事実を1つ。
+        2文目 それが普段と比べてどうか。比較できる数値が資料にある時だけ書く。
+              無ければ、外の気温など状況を補う事実を1つ書く。
+        3文目 ご家族が次にできること。「アプリでできること」が資料にあればそれを案内し、
+              無ければ電話での声かけをすすめる。
+
+        厳守事項:
+        - 【資料】に書かれている事実と数値だけを使うこと。書かれていない数値・時刻・家電名を
+          決して作らないこと。
+        - 資料に無い家電について、電源が入っている／切れていると断定しないこと。
+          資料が「確認できません」と述べている事柄は、確認できない旨のまま書くこと。
+        - 危険度のスコアや内部用語（High/Medium、リスクレベル等）は書かないこと。
+        - 医療的な診断・断定はしないこと。「熱中症です」ではなく「暑さが心配です」と書く。
+        - 絵文字、挨拶、前置き、署名は不要。本文のみ。
+        - 落ち着いた丁寧な口調で、あおらないこと。ただし、ぼかして安心させようともしないこと。
+        - 箇条書きにせず、自然な文章で書くこと。改行は入れないこと。
+        """;
 
     /// <summary>
     /// Produces the alert text. When the AI router is configured the wording is generated so
-    /// it reads naturally for the family; the deterministic template is always used as the
+    /// it reads naturally for the family; the deterministic wording is always used as the
     /// fallback, so alerting never depends on the LLM being reachable.
     /// </summary>
-    private async Task<string> BuildMessageAsync(string residentName, RiskResult risk, CancellationToken ct)
+    private async Task<string> BuildMessageAsync(AlertBriefing briefing, CancellationToken ct)
     {
-        var fallback = BuildMessage(residentName, risk);
+        var fallback = briefing.Compose();
 
         if (ai is not { IsConfigured: true })
         {
@@ -559,22 +816,12 @@ public sealed class WatchAlertService(
 
         try
         {
+            var facts = briefing.Facts();
+
             var messages = new List<AiMessage>
             {
-                new("system",
-                    "あなたは高齢者見守りサービスの通知文を書く日本語アシスタントです。" +
-                    "離れて暮らす家族に送るLINEメッセージを1通だけ書いてください。" +
-                    "条件: 60文字以内、1行、丁寧で落ち着いた口調、煽らない、断定しない、" +
-                    "絵文字と挨拶と前置きは不要、事実と次の行動の提案のみ。" +
-                    "**検知内容に書かれていない事実を足さないでください。**" +
-                    "特に、検知内容に無い家電の名前や、その電源が入っている・切れているという断定は" +
-                    "禁止です。検知内容が「確認できません」と述べている事柄は、" +
-                    "確認できない旨のまま書いてください（例:「エアコン未使用です」と言い切るのではなく" +
-                    "「室温にお気をつけください」のように書く）。"),
-                new("user",
-                    $"対象: {residentName}\n" +
-                    $"リスク: {risk.Level}（スコア {risk.Score}/100）\n" +
-                    $"検知内容: {risk.Reason}")
+                new("system", AlertPrompt),
+                new("user", $"【資料】\n{facts}")
             };
 
             var completion = await ai.CompleteAsync(messages, "alert-message", jsonMode: false, ct);
@@ -592,7 +839,16 @@ public sealed class WatchAlertService(
             // A prompt is a request, not a guarantee. The model has been observed turning
             // "冷房機器が未登録のため室内の状況は確認できません" into "エアコン未使用です",
             // which states a measurement we do not have. Reject that rather than send it.
-            return InventsApplianceState(text, risk.Reason) ? fallback : text;
+            if (InventsApplianceState(text, briefing.Risk.Reason))
+            {
+                return fallback;
+            }
+
+            // Now that the model is handed real figures, it can also get them wrong -- and
+            // a wrong number in an alert is worse than a vague one, because the family acts
+            // on it. The same check the assistant's summaries have always had is applied
+            // here, against the fact block the model was given.
+            return AssistantOrchestrator.InventsNumbers(facts, text) ? fallback : text;
         }
         catch (Exception)
         {
@@ -600,9 +856,6 @@ public sealed class WatchAlertService(
             return fallback;
         }
     }
-
-    private static string BuildMessage(string residentName, RiskResult risk) =>
-        $"{residentName}の見守りアラートです。{risk.Reason}。（スコア {risk.Score}/100）";
 
     /// <summary>
     /// Wordings that assert an appliance is not running. We only ever know this when a
