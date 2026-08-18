@@ -1,0 +1,542 @@
+{
+  "$comment": [
+    "誤報評価セット / false-alarm evaluation set.",
+    "",
+    "見守り製品の生死を分けるのは検知率ではなく誤報率である。何でもない日に通知が飛べば",
+    "家族は通知を切り、切られた瞬間に検知率はいくつであっても意味を失う。だからこの評価は",
+    "『危険をどれだけ捕まえたか』と同じ重さで『何でもない日にどれだけ黙っていられたか』を測る。",
+    "",
+    "kind の意味:",
+    "  normal   … この日に通知が来たら家族は『なんで？』と思う。通知＝誤報。",
+    "  incident … この日に黙っていたら見守りとして失敗。無通知＝見逃し。",
+    "rationale には、シナリオを実行する前に書いた『家族ならどう思うか』を残している。",
+    "",
+    "この評価セットの限界（正直に記す）:",
+    "  1. これは実世帯の記録にラベルを付けたものではなく、手で書いた合成シナリオである。",
+    "     したがって測っているのは『規則が宣言どおりに振る舞うか』であって、",
+    "     『現実の高齢者宅で誤報が出ないか』ではない。後者には実運用データが要る。",
+    "  2. 期待値は docs 化された閾値を踏まえて書いているため、これは仕様書と回帰ゲートを",
+    "     兼ねるものであり、独立した第三者検証ではない。",
+    "  3. 価値は境界にある。08:30(閾値08:40)の寝坊、猛暑日に8時間動くエアコン、",
+    "     寒い日に6時間動くヒーター、就寝中の平坦な電力 — うっかりした変更が",
+    "     まず壊すのはここで、壊れた瞬間にCIが赤くなる。",
+    "",
+    "RiskAssessmentService.Evaluate は純関数なので、このセットはLLMも外部APIも使わず",
+    "毎pushでCIで実行される。数値はスライドに書いた主張ではなく、常に再現できる実測値である。"
+  ],
+  "scenarios": [
+    {
+      "id": "n-01",
+      "label": "いつも通りの平日の夕方",
+      "kind": "normal",
+      "now": "19:00",
+      "rationale": "何も変わったことがない日。ここで通知が飛ぶなら毎日飛ぶ。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:45", "last": "18:50", "uses": 12, "activeMinutes": 290, "night": 0, "energyWh": 470 }
+    },
+    {
+      "id": "n-02",
+      "label": "いつもより1時間20分早く起きた",
+      "kind": "normal",
+      "now": "18:00",
+      "rationale": "早起きは不調のサインではない。早く起きた日に通知する見守りは信用されない。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "05:20", "last": "17:40", "uses": 13, "activeMinutes": 320, "night": 0, "energyWh": 500 }
+    },
+    {
+      "id": "n-03",
+      "label": "40分の寝坊",
+      "kind": "normal",
+      "now": "12:00",
+      "rationale": "誰にでもある。40分で家族を呼び出したら通知は読まれなくなる。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "07:20", "last": "11:50", "uses": 8, "activeMinutes": 180, "night": 0, "energyWh": 260 }
+    },
+    {
+      "id": "n-04",
+      "label": "2時間近い寝坊（猶予の境界すれすれ）",
+      "kind": "normal",
+      "now": "12:00",
+      "rationale": "境界の内側。ゆっくり寝た日と異変の境目をどこに置いたかを固定するためのケース。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "08:30", "last": "11:50", "uses": 7, "activeMinutes": 150, "night": 0, "energyWh": 220 }
+    },
+    {
+      "id": "n-05",
+      "label": "昼寝で午後が静か",
+      "kind": "normal",
+      "now": "15:00",
+      "rationale": "高齢者の昼寝は日常。静けさそのものは異常ではない。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:50", "last": "13:10", "uses": 9, "activeMinutes": 200, "night": 0, "energyWh": 300 }
+    },
+    {
+      "id": "n-06",
+      "label": "買い物で3時間外出して帰宅済み",
+      "kind": "normal",
+      "now": "18:00",
+      "rationale": "外出は元気な証拠。出かけるたびに通知が来る見守りは外出を抑制してしまう。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "17:30", "uses": 8, "activeMinutes": 170, "night": 0, "energyWh": 300 }
+    },
+    {
+      "id": "n-07",
+      "label": "涼しい夏の日にエアコンを使っていない",
+      "kind": "normal",
+      "now": "14:00",
+      "rationale": "涼しいのだから点ける必要がない。屋外データを見ずに『エアコンが止まっている』だけで鳴らす製品との差。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:35", "last": "13:40", "uses": 10, "activeMinutes": 250, "night": 0, "energyWh": 420 },
+      "wbgt": 24.0,
+      "cooling": [{ "name": "エアコン", "isOn": false, "watts": 0.4 }]
+    },
+    {
+      "id": "n-08",
+      "label": "警戒レベルの暑さ（WBGT 26）でエアコンは停止",
+      "kind": "normal",
+      "now": "13:00",
+      "rationale": "警戒はダッシュボードで勧める段階であって、仕事中の家族に割り込む段階ではない。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "12:50", "uses": 9, "activeMinutes": 220, "night": 0, "energyWh": 380 },
+      "wbgt": 26.0,
+      "cooling": [{ "name": "エアコン", "isOn": false, "watts": 0.4 }]
+    },
+    {
+      "id": "n-09",
+      "label": "猛暑日だがエアコンが動いている",
+      "kind": "normal",
+      "now": "14:00",
+      "rationale": "危険な暑さでも部屋が冷えているなら通知は不要。屋外の数字だけで鳴らさないことの確認。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "13:50", "uses": 11, "activeMinutes": 260, "night": 0, "energyWh": 900 },
+      "wbgt": 32.0,
+      "cooling": [{ "name": "エアコン", "isOn": true, "watts": 780.0 }]
+    },
+    {
+      "id": "n-10",
+      "label": "厳しい冷え込みだが暖房が動いている",
+      "kind": "normal",
+      "now": "20:00",
+      "rationale": "寒くても暖まっているなら問題ない。ヒートショック判定が屋外気温だけで暴発しないこと。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:50", "last": "19:40", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 950 },
+      "temperatureC": 3.0,
+      "heating": [{ "name": "ヒーター", "isOn": true, "watts": 900.0 }]
+    },
+    {
+      "id": "n-11",
+      "label": "肌寒い程度（12℃）で暖房は停止",
+      "kind": "normal",
+      "now": "19:00",
+      "rationale": "上着一枚で済む寒さ。ここで鳴らすと春と秋が通知だらけになる。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:45", "last": "18:30", "uses": 11, "activeMinutes": 280, "night": 0, "energyWh": 450 },
+      "temperatureC": 12.0,
+      "heating": [{ "name": "ヒーター", "isOn": false, "watts": 0.3 }]
+    },
+    {
+      "id": "n-12",
+      "label": "夜中に一度トイレに起きた",
+      "kind": "normal",
+      "now": "08:00",
+      "rationale": "一度なら日常。夜中の物音すべてを異常にすると毎晩鳴る。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "07:50", "uses": 5, "activeMinutes": 70, "night": 1, "energyWh": 120 }
+    },
+    {
+      "id": "n-13",
+      "label": "朝7時、まだ起きていない",
+      "kind": "normal",
+      "now": "07:00",
+      "rationale": "まだ寝ているだけ。起床前に『活動がない』と鳴らすのは論外。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": null, "last": null, "uses": 0, "activeMinutes": 0, "night": 0, "energyWh": 3 }
+    },
+    {
+      "id": "n-14",
+      "label": "深夜1時、家じゅうの電力が3時間動いていない",
+      "kind": "normal",
+      "now": "01:00",
+      "rationale": "寝ているのだから動かないのが正しい。ここで鳴らす製品は毎晩鳴る。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "22:30", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 470 },
+      "flatPower": [{ "name": "冷蔵庫", "hours": 3.0, "thresholdHours": 3 }]
+    },
+    {
+      "id": "n-15",
+      "label": "早朝6時、直前3時間は電力が平坦",
+      "kind": "normal",
+      "now": "06:00",
+      "rationale": "その3時間は元々寝ている時間。窓の両端を見ないと毎朝鳴る。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "05:55", "last": "05:58", "uses": 1, "activeMinutes": 5, "night": 0, "energyWh": 8 },
+      "flatPower": [{ "name": "冷蔵庫", "hours": 3.0, "thresholdHours": 3 }]
+    },
+    {
+      "id": "n-16",
+      "label": "週末で普段より活動が多い",
+      "kind": "normal",
+      "now": "17:00",
+      "rationale": "元気な日。増えた方向のずれで鳴らす理由はない。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:30", "last": "16:40", "uses": 16, "activeMinutes": 380, "night": 0, "energyWh": 620 }
+    },
+    {
+      "id": "n-17",
+      "label": "リビングの照明が日中5時間点いている",
+      "kind": "normal",
+      "now": "17:00",
+      "rationale": "曇りの日なら普通。日中の消し忘れは危険ではない。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "16:30", "uses": 11, "activeMinutes": 280, "night": 0, "energyWh": 460 },
+      "leftOn": [{ "name": "リビングの照明", "type": "Light", "hours": 5.0 }]
+    },
+    {
+      "id": "n-18",
+      "label": "猛暑日にエアコンを8時間連続運転",
+      "kind": "normal",
+      "now": "14:00",
+      "rationale": "猛暑日に8時間動いているのは正解であって、つけっぱなしではない。ここを取り違えると熱中症対策と矛盾する。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:10", "last": "13:50", "uses": 11, "activeMinutes": 270, "night": 0, "energyWh": 1200 },
+      "wbgt": 32.0,
+      "leftOn": [{ "name": "エアコン", "type": "AirConditioner", "hours": 8.0 }],
+      "cooling": [{ "name": "エアコン", "isOn": true, "watts": 810.0 }]
+    },
+    {
+      "id": "n-19",
+      "label": "電力がいつもの7割",
+      "kind": "normal",
+      "now": "19:00",
+      "rationale": "日によるゆらぎの範囲。3割減で鳴らすと週の半分は鳴る。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:55", "last": "18:20", "uses": 9, "activeMinutes": 210, "night": 0, "energyWh": 340 }
+    },
+    {
+      "id": "n-20",
+      "label": "来客があって家電の利用が多い",
+      "kind": "normal",
+      "now": "16:00",
+      "rationale": "人が来ただけ。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "15:40", "uses": 20, "activeMinutes": 420, "night": 0, "energyWh": 700 }
+    },
+    {
+      "id": "n-21",
+      "label": "午前9時、朝の支度が終わったところ",
+      "kind": "normal",
+      "now": "09:00",
+      "rationale": "普通の朝。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:50", "last": "08:40", "uses": 5, "activeMinutes": 90, "night": 0, "energyWh": 130 }
+    },
+    {
+      "id": "n-22",
+      "label": "22時、就寝の支度",
+      "kind": "normal",
+      "now": "22:00",
+      "rationale": "一日の終わり。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "21:50", "uses": 13, "activeMinutes": 310, "night": 0, "energyWh": 490 }
+    },
+    {
+      "id": "n-23",
+      "label": "寒い日にヒーターを6時間運転",
+      "kind": "normal",
+      "now": "20:00",
+      "rationale": "3℃の日に暖房が動くのは当たり前。火災の規則を字面どおり当てると冬は毎晩鳴り、鳴らなくなった夜に事故が起きる。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:50", "last": "19:50", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 1100 },
+      "temperatureC": 3.0,
+      "leftOn": [{ "name": "ヒーター", "type": "Heater", "hours": 6.0 }],
+      "heating": [{ "name": "ヒーター", "isOn": true, "watts": 880.0 }]
+    },
+    {
+      "id": "n-24",
+      "label": "猛暑日だが冷房機器が登録されていない",
+      "kind": "normal",
+      "now": "14:00",
+      "rationale": "部屋の状況を見る手段がない以上、暑い日すべてに鳴らすことになる。見えていないことは画面で伝え、通知は使わないという設計判断。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "13:40", "uses": 10, "activeMinutes": 250, "night": 0, "energyWh": 430 },
+      "wbgt": 32.0
+    },
+    {
+      "id": "n-25",
+      "label": "電子レンジを12分使った",
+      "kind": "normal",
+      "now": "12:30",
+      "rationale": "調理中。火の気のある機器でも、使っている間は使っているだけ。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "12:20", "uses": 7, "activeMinutes": 150, "night": 0, "energyWh": 250 },
+      "leftOn": [{ "name": "電子レンジ", "type": "Microwave", "hours": 0.2 }]
+    },
+    {
+      "id": "n-26",
+      "label": "電気ケトルを18分使った",
+      "kind": "normal",
+      "now": "10:00",
+      "rationale": "お茶を淹れている。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "09:50", "uses": 6, "activeMinutes": 110, "night": 0, "energyWh": 190 },
+      "leftOn": [{ "name": "電気ケトル", "type": "Kettle", "hours": 0.3 }]
+    },
+    {
+      "id": "n-27",
+      "label": "午前11時、いつも通りの午前",
+      "kind": "normal",
+      "now": "11:00",
+      "rationale": "普通の午前中。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:45", "last": "10:50", "uses": 7, "activeMinutes": 140, "night": 0, "energyWh": 210 }
+    },
+    {
+      "id": "n-28",
+      "label": "21時、リビングの照明が3時間点いている",
+      "kind": "normal",
+      "now": "21:00",
+      "rationale": "起きているのだから点いている。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "20:50", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 470 },
+      "leftOn": [{ "name": "リビングの照明", "type": "Light", "hours": 3.0 }]
+    },
+    {
+      "id": "n-29",
+      "label": "深夜0時すぎ、就寝直後",
+      "kind": "normal",
+      "now": "00:10",
+      "rationale": "日付が変わった直後に前日の集計で鳴らさないこと。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "23:40", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 475 }
+    },
+    {
+      "id": "n-30",
+      "label": "14℃で暖房を使っていない",
+      "kind": "normal",
+      "now": "18:00",
+      "rationale": "まだ暖房を入れない家庭は多い。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:45", "last": "17:40", "uses": 11, "activeMinutes": 270, "night": 0, "energyWh": 440 },
+      "temperatureC": 14.0,
+      "heating": [{ "name": "ヒーター", "isOn": false, "watts": 0.3 }]
+    },
+    {
+      "id": "n-31",
+      "label": "朝8時、起きたばかりで家電の利用は2回",
+      "kind": "normal",
+      "now": "08:00",
+      "rationale": "一日が始まったばかり。まだ2回しか使っていないのは当たり前で、ここで『普段より活動が少ない』と鳴らせば毎朝鳴る。しかも起きて照明を点けた瞬間に鳴ることになる。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:50", "last": "07:50", "uses": 2, "activeMinutes": 40, "night": 0, "energyWh": 60 }
+    },
+    {
+      "id": "n-32",
+      "label": "昼12時、午前中の利用は3回",
+      "kind": "normal",
+      "now": "12:00",
+      "rationale": "午前だけを丸一日の平均と比べれば必ず少ない。日の途中の集計を一日分と比較しないこと。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:45", "last": "11:40", "uses": 3, "activeMinutes": 70, "night": 0, "energyWh": 110 }
+    },
+    {
+      "id": "i-01",
+      "label": "朝10時になっても家電の利用が一切ない",
+      "kind": "incident",
+      "now": "10:00",
+      "rationale": "起床時刻を大きく過ぎて家が沈黙している。誰かが見に行くべき典型。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": null, "last": null, "uses": 0, "activeMinutes": 0, "night": 0, "energyWh": 3 }
+    },
+    {
+      "id": "i-02",
+      "label": "WBGT 33の危険な暑さ、エアコンは停止、在宅",
+      "kind": "incident",
+      "now": "14:00",
+      "rationale": "室内で座ったまま熱中症になる条件。屋外データと室内の実電力が揃って初めて言える。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "13:40", "uses": 10, "activeMinutes": 240, "night": 0, "energyWh": 400 },
+      "wbgt": 33.0,
+      "cooling": [{ "name": "エアコン", "isOn": false, "watts": 0.4 }]
+    },
+    {
+      "id": "i-03",
+      "label": "WBGT 29、エアコンは停止",
+      "kind": "incident",
+      "now": "15:00",
+      "rationale": "厳重警戒。救急搬送の半数以上が住居で起きている帯。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "14:40", "uses": 10, "activeMinutes": 250, "night": 0, "energyWh": 410 },
+      "wbgt": 29.0,
+      "cooling": [{ "name": "エアコン", "isOn": false, "watts": 0.4 }]
+    },
+    {
+      "id": "i-04",
+      "label": "気温3℃、暖房が止まっている",
+      "kind": "incident",
+      "now": "21:00",
+      "rationale": "ヒートショックと低体温症。夜のうちに気づかないと翌朝では遅い。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:50", "last": "20:40", "uses": 11, "activeMinutes": 280, "night": 0, "energyWh": 430 },
+      "temperatureC": 3.0,
+      "heating": [{ "name": "ヒーター", "isOn": false, "watts": 0.3 }]
+    },
+    {
+      "id": "i-05",
+      "label": "気温8℃、暖房が止まっている",
+      "kind": "incident",
+      "now": "20:00",
+      "rationale": "本人は寒さに気づきにくい。家族が一声かける価値がある。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:50", "last": "19:40", "uses": 11, "activeMinutes": 275, "night": 0, "energyWh": 440 },
+      "temperatureC": 8.0,
+      "heating": [{ "name": "ヒーター", "isOn": false, "watts": 0.3 }]
+    },
+    {
+      "id": "i-06",
+      "label": "深夜2時、ヒーターが5時間つけっぱなし",
+      "kind": "incident",
+      "now": "02:00",
+      "rationale": "火災。ここだけは二つ目の兆候を待ってはいけない。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "22:40", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 900 },
+      "leftOn": [{ "name": "ヒーター", "type": "Heater", "hours": 5.0 }]
+    },
+    {
+      "id": "i-07",
+      "label": "日中、電気ケトルが3時間つけっぱなし",
+      "kind": "incident",
+      "now": "15:00",
+      "rationale": "空焚き。暑い寒いに関係なく危ない。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "14:40", "uses": 10, "activeMinutes": 250, "night": 0, "energyWh": 600 },
+      "leftOn": [{ "name": "電気ケトル", "type": "Kettle", "hours": 3.0 }]
+    },
+    {
+      "id": "i-08",
+      "label": "起床がいつもより4時間遅い",
+      "kind": "incident",
+      "now": "12:00",
+      "rationale": "寝坊では説明しきれない遅れ。体調を崩した朝はこう見える。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "11:00", "last": "11:50", "uses": 8, "activeMinutes": 60, "night": 0, "energyWh": 120 }
+    },
+    {
+      "id": "i-09",
+      "label": "深夜帯に3回の家電利用",
+      "kind": "incident",
+      "now": "07:00",
+      "rationale": "眠れていない、あるいは体調が悪い夜。翌朝に家族が様子を聞くべき。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:45", "last": "06:55", "uses": 5, "activeMinutes": 60, "night": 3, "energyWh": 110 }
+    },
+    {
+      "id": "i-10",
+      "label": "活動量が普段の3割以下",
+      "kind": "incident",
+      "now": "18:00",
+      "rationale": "起きてはいるが、ほとんど動いていない一日。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "07:10", "last": "17:20", "uses": 3, "activeMinutes": 50, "night": 0, "energyWh": 90 }
+    },
+    {
+      "id": "i-11",
+      "label": "昼間、冷蔵庫の電力が6時間まったく動かない",
+      "kind": "incident",
+      "now": "14:00",
+      "rationale": "動いているはずの時間帯に何も動いていない。機器の故障か、家に人がいないか、倒れているか。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "08:10", "uses": 5, "activeMinutes": 80, "night": 0, "energyWh": 130 },
+      "flatPower": [{ "name": "冷蔵庫", "hours": 6.0, "thresholdHours": 3 }]
+    },
+    {
+      "id": "i-12",
+      "label": "起床が4時間遅く、そのあとも動きが少ない",
+      "kind": "incident",
+      "now": "18:00",
+      "rationale": "二つの兆候が重なっている。単独なら様子見でも、重なれば見に行く。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "10:40", "last": "17:10", "uses": 4, "activeMinutes": 60, "night": 0, "energyWh": 100 }
+    },
+    {
+      "id": "i-13",
+      "label": "WBGT 29でエアコン停止、しかも起床が遅い",
+      "kind": "incident",
+      "now": "12:00",
+      "rationale": "暑さと体調不良のサインが同時に出ている。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "10:00", "last": "11:40", "uses": 6, "activeMinutes": 90, "night": 0, "energyWh": 160 },
+      "wbgt": 29.0,
+      "cooling": [{ "name": "エアコン", "isOn": false, "watts": 0.4 }]
+    },
+    {
+      "id": "i-14",
+      "label": "深夜3時、照明が6時間点いていて夜間の利用も2回",
+      "kind": "incident",
+      "now": "03:00",
+      "rationale": "消し忘れだけなら朝でいい。だが夜通し起きている形跡が重なっている。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "22:50", "uses": 12, "activeMinutes": 300, "night": 2, "energyWh": 520 },
+      "leftOn": [{ "name": "リビングの照明", "type": "Light", "hours": 6.0 }]
+    },
+    {
+      "id": "i-15",
+      "label": "猛暑日にエアコン停止、活動量も少ない",
+      "kind": "incident",
+      "now": "16:00",
+      "rationale": "暑い部屋で動けなくなっている可能性。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "07:00", "last": "15:20", "uses": 4, "activeMinutes": 60, "night": 0, "energyWh": 110 },
+      "wbgt": 29.0,
+      "cooling": [{ "name": "エアコン", "isOn": false, "watts": 0.4 }]
+    },
+    {
+      "id": "i-16",
+      "label": "気温2℃で暖房停止、起床も4時間遅い",
+      "kind": "incident",
+      "now": "12:00",
+      "rationale": "冷えた部屋から起き上がれていない朝。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "11:00", "last": "11:40", "uses": 6, "activeMinutes": 60, "night": 0, "energyWh": 130 },
+      "temperatureC": 2.0,
+      "heating": [{ "name": "ヒーター", "isOn": false, "watts": 0.3 }]
+    },
+    {
+      "id": "i-17",
+      "label": "夕方、電力が4時間平坦",
+      "kind": "incident",
+      "now": "16:00",
+      "rationale": "夕食の支度が始まるはずの時間に何も動かない。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "11:50", "uses": 6, "activeMinutes": 110, "night": 0, "energyWh": 180 },
+      "flatPower": [{ "name": "冷蔵庫", "hours": 4.0, "thresholdHours": 3 }]
+    },
+    {
+      "id": "i-18",
+      "label": "朝9時、活動ゼロ（いつもは6時40分起床）",
+      "kind": "incident",
+      "now": "09:00",
+      "rationale": "2時間以上の猶予を過ぎても物音がない。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": null, "last": null, "uses": 0, "activeMinutes": 0, "night": 0, "energyWh": 3 }
+    },
+    {
+      "id": "i-19",
+      "label": "23時、寒くもない日にヒーターが3時間つけっぱなし",
+      "kind": "incident",
+      "now": "23:00",
+      "rationale": "暖房として必要な状況ではないのに動き続けている。就寝中の火災が最も怖い。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "06:40", "last": "22:40", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 800 },
+      "leftOn": [{ "name": "ヒーター", "type": "Heater", "hours": 3.0 }]
+    },
+    {
+      "id": "i-20",
+      "label": "起床が4時間遅く、前夜の深夜利用も2回",
+      "kind": "incident",
+      "now": "12:00",
+      "rationale": "眠れなかった夜と起きられない朝が続いている。",
+      "baseline": { "first": "06:40", "last": "22:10", "uses": 12, "activeMinutes": 300, "night": 0, "energyWh": 480 },
+      "today": { "first": "10:50", "last": "11:50", "uses": 7, "activeMinutes": 70, "night": 2, "energyWh": 150 }
+    }
+  ]
+}

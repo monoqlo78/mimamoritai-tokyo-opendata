@@ -21,8 +21,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The evaluation set is read at runtime by IntentEvaluationHarness. -->
+    <!-- The evaluation sets are read at runtime by the harnesses in Eval\. -->
     <Content Include="Eval\intent-cases.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Eval\risk-scenarios.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

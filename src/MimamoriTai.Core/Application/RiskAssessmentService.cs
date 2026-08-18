@@ -229,6 +229,25 @@ public sealed class RiskAssessmentService(
     /// </summary>
     public const int DefaultFlatPowerAlertHours = 3;
 
+    /// <summary>
+    /// The hour from which today's running total may be compared against a usual day.
+    ///
+    /// <para>
+    /// Today's count is a day in progress; the baseline is a set of finished days. Comparing
+    /// them at breakfast asks whether four hours resemble twenty-four, and the answer is
+    /// always no -- so the household would be reported every morning, and reported *because*
+    /// they got up and switched something on. An alert that arrives every day is one the
+    /// family stops opening, which costs them the day it was real.
+    /// </para>
+    /// <para>
+    /// Late afternoon is the earliest the comparison carries information: enough of the day
+    /// has happened that a genuinely still one stands out, and there is still an evening in
+    /// which somebody can telephone or call round. The other rules are unaffected -- a
+    /// silent morning is already covered, and far more directly, by the late-start rule.
+    /// </para>
+    /// </summary>
+    public const int LowActivityEarliestHour = 17;
+
     public static bool IsQuietHour(TimeOnly local) =>
         local.Hour >= QuietStartHour || local.Hour < QuietEndHour;
 
@@ -569,9 +588,10 @@ public sealed class RiskAssessmentService(
             reasons.Add($"深夜帯に{today.NightActivityCount}回の家電利用があります");
         }
 
-        // Compare against the recent norm, ignoring days with no data at all.
+        // Compare against the recent norm, ignoring days with no data at all. Only once the
+        // day is far enough along to be comparable: see LowActivityEarliestHour.
         var reference = baseline.Where(d => d.Date != today.Date && d.DeviceUsageCount > 0).ToList();
-        if (reference.Count >= 3 && today.DeviceUsageCount > 0)
+        if (nowLocal.Hour >= LowActivityEarliestHour && reference.Count >= 3 && today.DeviceUsageCount > 0)
         {
             var average = reference.Average(d => d.DeviceUsageCount);
             if (average > 0 && today.DeviceUsageCount <= average * 0.4)
