@@ -283,3 +283,89 @@ dotnet user-secrets set "Fabric:McpUrl" "<your-fabric-data-agent-mcp-url>"
 ```
 
 `Fabric:Enabled` を `true` にするのを忘れないでください（`appsettings.Development.json` または環境変数 `Fabric__Enabled=true`）。
+
+## 6. Power BI で可視化する（セマンティックモデル）
+
+運用コンソール（Rayfin）が読み書きしている Fabric SQL データベースは、そのまま
+Power BI から使えます。Fabric SQL データベースは OneLake へ自動でミラーされ、
+SQL 分析エンドポイントと既定のセマンティックモデルが自動生成されるためです。
+新しくデータの箱を用意する必要はありません。
+
+ただし既定のモデルをそのまま使うと困ります。Rayfin のエンティティ定義
+（`fabric-app/rayfin/data/*.ts`）は数値も日時も `@text()`、つまり NVARCHAR で
+持っているからです。コンソールは値をそのまま文字として描くのでこれで足りて
+いるのですが、Power BI から見ると全列がテキストになり、
+
+- `SUM` / `AVERAGE` がそのままでは書けない
+- 時系列の軸に使えない（日付階層が生えない）
+- 「未測定」を表す空文字が 0 に化ける
+
+という三つの問題が出ます。三番目が特に厄介で、電力を測っていない機器の 0 と
+本当に 0Wh だった機器を混ぜてしまいます。
+
+そこで、型を戻したビューを挟みます。
+
+```
+Fabric SQL データベース（dbo.HouseholdSnapshots ほか / 全部テキスト）
+        ↓  semantic-model-views.sql  ← TRY_CONVERT で型を復元
+ビュー（dbo.v_Household / v_ActivityHourly / v_OutdoorHourly / v_Alert /
+        v_AiRouterCall / v_Date）
+        ↓
+カスタムセマンティックモデル → Power BI レポート
+```
+
+### 手順
+
+1. Fabric ポータルで対象の SQL データベースを開く
+2. 「新しいクエリ」に `fabric-app/scripts/semantic-model-views.sql` を貼って実行
+   （`CREATE OR ALTER` なので何度流しても同じ結果になります）
+3. モデリング → 新しいセマンティックモデル → `v_` で始まる 6 つのビューを選択
+4. `v_Date` を「日付テーブルとしてマーク」する
+5. `v_Date[日付]` から `v_ActivityHourly[日付]` `v_OutdoorHourly[日付]`
+   `v_Alert[送信日]` へ一対多のリレーションを張る
+
+既定のセマンティックモデルは触りません。Rayfin がスキーマを再適用したときに
+上書きされる可能性があるためです。
+
+### 日付テーブルを必ず作る理由
+
+この作品の主題は「屋外の気温」と「家の中の電力」を重ね合わせることです。
+`v_OutdoorHourly` と `v_ActivityHourly` は別のテーブルなので、共通の日付表を
+経由しないと同じグラフに並びません。Power BI の自動日付テーブルはテーブルごとに
+別々に作られるため、この用途には使えません。
+
+`v_Date` は実データの最小日〜最大日から動的に作るので、データが増えれば自動で
+伸びます。
+
+### 空文字と NULL
+
+同期側（`FabricSqlConsoleSync.Measure()`）は「測っていない」を空文字で書きます。
+0 ではありません。0℃ は真冬のごく普通の観測値なので、欠測と混ぜられないためです。
+`TRY_CONVERT` は空文字に対して NULL を返すので、この区別はビューでも保たれます。
+Power BI の `SUM` / `AVERAGE` は NULL を無視するため、欠測が 0 として平均を
+押し下げることもありません。
+
+| Fabric SQL の値 | ビューでの値 | Power BI での扱い |
+| --- | --- | --- |
+| `'1450.5'` | `1450.50` | 集計対象 |
+| `'0'` | `0.00` | 集計対象（真の 0） |
+| `''`（欠測） | `NULL` | 集計から除外 |
+
+### 作られるビュー
+
+| ビュー | 元テーブル | 用途 |
+| --- | --- | --- |
+| `v_Household` | `HouseholdSnapshots` | 世帯ごとの現在の運用状況。1 世帯 1 行の上書きなので履歴分析には使えない |
+| `v_Alert` | `AlertRecords` | 通知の記録。`失敗フラグ` で送信失敗率を出せる |
+| `v_ActivityHourly` | `ActivityBuckets` | 機器の 1 時間ごとの動きと電力量。時系列の主役 |
+| `v_OutdoorHourly` | `OutdoorReadings` | 気象庁アメダスと環境省 WBGT を時間単位に丸めたもの |
+| `v_AiRouterCall` | `AiRouterCalls` | AI 呼び出しの回数・成功率・応答時間 |
+| `v_Date` | 上記から生成 | 日付ディメンション |
+
+### 注意
+
+- Fabric のキャパシティが停止していると SQL 分析エンドポイントに接続できません。
+  先にキャパシティを再開してください。
+- `v_Household` は現在値の上書きなので、世帯ごとの推移を追いたい場合は
+  `v_ActivityHourly` を集計してください。
+

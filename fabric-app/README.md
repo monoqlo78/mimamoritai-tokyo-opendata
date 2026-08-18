@@ -57,12 +57,40 @@ pwsh ./scripts/sync-to-fabric.ps1
 - `scripts/extract-snapshot.sql` … `AdminConsoleService.LoadAsync` と同じ集計を行う **読み取り専用**クエリ。`mimamori` スキーマのみを参照します
 - `scripts/extract-snapshot.ps1` … 上記を実行して `snapshot.json` を出力（`.gitignore` 済み）
 - `scripts/sync-to-fabric.ps1` … 抽出から Fabric への MERGE までを一括実行
+- `scripts/semantic-model-views.sql` … Power BI 用に型を戻したビューを作る（後述）
 
 認証は呼び出し元の Entra トークン（`az account get-access-token`）を使うため、
 接続シークレットはリポジトリに保存されません。本番DBへの書き込みは行いません。
 
 行のキーは冪等です（世帯は `householdId` から導出した固定 GUID、通知は元の `WatchAlert.Id`）。
 そのため再実行しても重複しません。
+
+## Power BI から見る
+
+Fabric SQL データベースは OneLake へ自動でミラーされるので、Power BI からは
+そのまま接続できます。ただし Rayfin のエンティティは数値も日時も `@text()`
+（NVARCHAR）で持っているため、既定のセマンティックモデルでは全列がテキストに
+なり、合計も時系列も組めません。
+
+`scripts/semantic-model-views.sql` を Fabric ポータルの SQL クエリで実行すると、
+`TRY_CONVERT` で型を戻した 6 つのビューが作られます。セマンティックモデルには
+テーブルではなくこのビューを載せてください。
+
+| ビュー | 中身 |
+| --- | --- |
+| `v_Household` | 世帯ごとの現在の運用状況 |
+| `v_Alert` | 通知の記録と成否 |
+| `v_ActivityHourly` | 機器の1時間ごとの動きと電力量 |
+| `v_OutdoorHourly` | 屋外の気温・湿度・暑さ指数 |
+| `v_AiRouterCall` | AI 呼び出しの回数と応答時間 |
+| `v_Date` | 日付ディメンション |
+
+「屋外の気温」と「家の中の電力」を同じグラフに並べるには `v_Date` を
+「日付テーブルとしてマーク」してリレーションを張る必要があります。手順は
+`docs/FABRIC_SETUP.md` の「6. Power BI で可視化する」にあります。
+
+欠測は空文字で保存されており、`TRY_CONVERT` が NULL に落とすので 0 とは
+区別されます（0℃ は真冬の正当な観測値なので混ぜられません）。
 
 `SwitchBotConnection.Encrypted*` と `WatchAlert.Message` は抽出クエリで**選択していません**。
 
