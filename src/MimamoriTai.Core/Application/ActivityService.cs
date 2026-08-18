@@ -68,7 +68,8 @@ public sealed class ActivityService(IAppDbContext db)
             .ToListAsync(ct);
 
         var readings = await db.PlugMiniReadings
-            .Where(r => r.HouseholdId == householdId && r.ApproxWatts != null
+            .Where(r => r.HouseholdId == householdId
+                && (r.DailyEnergyWh != null || r.ApproxWatts != null)
                 && r.OccurredAtUtc >= from && r.OccurredAtUtc < to)
             .OrderBy(r => r.OccurredAtUtc)
             .ToListAsync(ct);
@@ -88,7 +89,9 @@ public sealed class ActivityService(IAppDbContext db)
             .ToListAsync(ct);
 
         var readings = await db.PlugMiniReadings
-            .Where(r => r.HouseholdId == householdId && r.ApproxWatts != null && r.OccurredAtUtc >= from)
+            .Where(r => r.HouseholdId == householdId
+                && (r.DailyEnergyWh != null || r.ApproxWatts != null)
+                && r.OccurredAtUtc >= from)
             .OrderBy(r => r.OccurredAtUtc)
             .ToListAsync(ct);
 
@@ -184,7 +187,13 @@ public sealed class ActivityService(IAppDbContext db)
 
         foreach (var r in readings ?? [])
         {
-            if (r.ApproxWatts is { } watts)
+            // Real power first, the volts-times-amps estimate only when the plug did not
+            // report it -- the same precedence the poller uses to decide a socket is in
+            // use. Apparent power on a reactive load reads far above the watts actually
+            // consumed (314mA at 104V computes to 32.7W against 0.3W reported), so
+            // integrating it here while PowerUsageService integrates the real figure
+            // would put two contradictory electricity totals in front of the same family.
+            if ((r.DailyEnergyWh ?? r.ApproxWatts) is { } watts)
             {
                 samples.Add(new PowerSample(r.DeviceId, r.OccurredAtUtc, watts));
             }
@@ -415,7 +424,9 @@ public sealed class ActivityService(IAppDbContext db)
             .ToListAsync(ct);
 
         var readings = await db.PlugMiniReadings
-            .Where(r => r.HouseholdId == householdId && r.ApproxWatts != null && r.OccurredAtUtc >= from)
+            .Where(r => r.HouseholdId == householdId
+                && (r.DailyEnergyWh != null || r.ApproxWatts != null)
+                && r.OccurredAtUtc >= from)
             .OrderBy(r => r.OccurredAtUtc)
             .ToListAsync(ct);
 

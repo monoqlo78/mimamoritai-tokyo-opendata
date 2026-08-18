@@ -23,6 +23,58 @@ public static class DemoDataSeeder
     public const string DemoHouseholdName = "見守り隊デモ世帯";
     public const int DemoDays = 14;
 
+    /// <summary>
+    /// Cadence of the synthetic meter, matching <c>SwitchBot:PollIntervalMinutes</c>.
+    ///
+    /// This value is not cosmetic. Both readers of the series hold a sample for a bounded
+    /// time and then stop - <see cref="PowerUsageService.MaxSampleSpan"/> at ten minutes,
+    /// and ActivityService's integration cap at thirty - so that an appliance which drops
+    /// off the network is not credited with running all night. Demo data spaced further
+    /// apart than those caps is therefore charged for the cap and no more, which is what
+    /// leaves a chart blank for the rest of an appliance's run.
+    /// </summary>
+    public const int ReadingIntervalMinutes = 5;
+
+    /// <summary>
+    /// Draw of an appliance while it is running, in real watts.
+    ///
+    /// Typical figures for a Japanese home at 100V: an LED ceiling light is tens of watts,
+    /// a fan is comparable, and the resistive and compressor loads are an order of
+    /// magnitude above both. The point of not giving every appliance the same number is
+    /// that the per-device chart is meant to answer "what caused the change", and it
+    /// cannot do that if the heater and the bedside lamp draw alike.
+    /// </summary>
+    private static double RunningWatts(DeviceType type) => type switch
+    {
+        DeviceType.Light => 34.0,
+        DeviceType.Fan => 28.0,
+        DeviceType.AirConditioner => 470.0,
+        DeviceType.Heater => 730.0,
+        DeviceType.Kettle => 1250.0,
+        DeviceType.Microwave => 1000.0,
+        _ => 40.0
+    };
+
+    /// <summary>
+    /// Real power over apparent power. Lighting and motor loads are reactive, so a plug
+    /// measuring volts and amps reads well above the watts actually consumed - the gap
+    /// <see cref="PowerUsageService"/> exists to avoid integrating.
+    /// </summary>
+    private static double PowerFactor(DeviceType type) => type switch
+    {
+        DeviceType.Light => 0.60,
+        DeviceType.Fan => 0.75,
+        DeviceType.Heater => 1.00,
+        DeviceType.Kettle => 1.00,
+        _ => 0.90
+    };
+
+    /// <summary>Draw of a plug whose appliance is switched off but still energised.</summary>
+    private const double StandbyWatts = 0.35;
+
+    /// <summary>Nominal Japanese domestic mains voltage.</summary>
+    private const double NominalVolts = 101.0;
+
     /// <summary>Deterministic seed keeps demos reproducible between runs.</summary>
     private const int RandomSeed = 20260808;
 
@@ -83,7 +135,14 @@ public static class DemoDataSeeder
         // answer to that question - not the AI's confidence - is what energises it.
         db.Devices.AddRange(devices);
 
-        db.DeviceEvents.AddRange(GenerateEvents(household.Id, devices, now));
+        var seedEvents = GenerateEvents(household.Id, devices, now);
+        db.DeviceEvents.AddRange(seedEvents);
+        db.PlugMiniReadings.AddRange(GenerateReadings(
+            household.Id,
+            devices,
+            seedEvents,
+            HouseholdTime.StartOfLocalDayUtc(HouseholdTime.LocalDate(now).AddDays(-(DemoDays - 1))),
+            now));
 
         db.FamilyMessages.AddRange(
             new FamilyMessage
@@ -245,13 +304,77 @@ public static class DemoDataSeeder
         // day generation is deterministic (seeded by date) and re-running it for a
         // day already covered simply reproduces events that are filtered out here.
         var newEvents = events.Where(e => e.OccurredAtUtc > lastEventAt && e.OccurredAtUtc <= now).ToList();
-        if (newEvents.Count == 0)
+        if (newEvents.Count > 0)
+        {
+            db.DeviceEvents.AddRange(newEvents);
+        }
+
+        // Measurements are topped up separately from switch events, and against their own
+        // watermark. A plug reports its draw every poll whether or not anything was
+        // switched, so an afternoon in which nobody touched an appliance still owes the
+        // chart its readings - gating them on new events would reintroduce the very gaps
+        // this data exists to fill.
+        var newReadings = await TopUpReadingsAsync(db, household.Id, devices, events, now, ct);
+        if (newEvents.Count == 0 && newReadings == 0)
         {
             return;
         }
 
-        db.DeviceEvents.AddRange(newEvents);
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Extends the synthetic meter up to <paramref name="now"/>, starting from the newest
+    /// reading already stored. Returns how many rows were queued.
+    /// </summary>
+    private static async Task<int> TopUpReadingsAsync(
+        AppDbContext db,
+        Guid householdId,
+        IReadOnlyList<Device> devices,
+        IReadOnlyList<DeviceEvent> generatedEvents,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        var newestReading = await db.PlugMiniReadings
+            .Where(r => r.HouseholdId == householdId)
+            .OrderByDescending(r => r.OccurredAtUtc)
+            .Select(r => (DateTimeOffset?)r.OccurredAtUtc)
+            .FirstOrDefaultAsync(ct);
+
+        // A demo household seeded before this data existed has switch events but no
+        // measurements at all. Backfilling the same window the seeder would have written
+        // is what repairs it in place, rather than leaving those deployments with the
+        // gapped chart for ever.
+        var from = newestReading?.AddTicks(1)
+            ?? HouseholdTime.StartOfLocalDayUtc(HouseholdTime.LocalDate(now).AddDays(-(DemoDays - 1)));
+
+        if (from >= now)
+        {
+            return 0;
+        }
+
+        // Readings need the switch timeline that covers the window, including the events
+        // already in the database: the state an appliance was left in yesterday is what
+        // decides whether this morning's first reading is a run or a standby.
+        var storedEvents = await db.DeviceEvents
+            .Where(e => e.HouseholdId == householdId && e.Source == EventSource.Seed)
+            .OrderBy(e => e.OccurredAtUtc)
+            .ToListAsync(ct);
+
+        var timeline = storedEvents
+            .Concat(generatedEvents.Where(e => e.OccurredAtUtc > (storedEvents.Count > 0 ? storedEvents[^1].OccurredAtUtc : DateTimeOffset.MinValue)
+                && e.OccurredAtUtc <= now))
+            .OrderBy(e => e.OccurredAtUtc)
+            .ToList();
+
+        var readings = GenerateReadings(householdId, devices, timeline, from, now);
+        if (readings.Count == 0)
+        {
+            return 0;
+        }
+
+        db.PlugMiniReadings.AddRange(readings);
+        return readings.Count;
     }
 
     /// <summary>Deterministic per-day PRNG so a given local date always generates the same events, whether produced by the initial seed or a later top-up.</summary>
@@ -320,11 +443,124 @@ public static class DemoDataSeeder
             DeviceId = device.Id,
             EventType = "PowerState",
             State = state,
-            PowerWatts = state == "on" ? 32.0 : 0.0,
+            PowerWatts = state == "on" ? RunningWatts(device.DeviceType) : 0.0,
             Source = EventSource.Seed,
             OccurredAtUtc = dayStartUtc.AddMinutes(minutesFromLocalMidnight),
             ReceivedAtUtc = dayStartUtc.AddMinutes(minutesFromLocalMidnight),
             RawPayloadJson = null
         });
+    }
+
+    /// <summary>
+    /// Turns the on/off timeline into the measurements a Plug Mini would have written
+    /// while it ran.
+    ///
+    /// Switch events alone cannot draw an electricity chart. Every reader of the series
+    /// holds a sample for a capped interval and then stops crediting it, so a light
+    /// switched on at 07:13 and off at 11:51 shows up as half an hour of draw followed by
+    /// four empty hours - the appliance was plainly running and the graph says nothing.
+    /// Real hardware fills that in by reporting its draw every poll whether or not
+    /// anything changed, and until that hardware is present the demo has to do the same
+    /// or it demonstrates a defect it does not have.
+    ///
+    /// Only devices that appear in <paramref name="events"/> are metered, so an appliance
+    /// the scenario deliberately leaves switched off stays switched off.
+    /// </summary>
+    public static List<PlugMiniReading> GenerateReadings(
+        Guid householdId,
+        IReadOnlyList<Device> devices,
+        IReadOnlyList<DeviceEvent> events,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc)
+    {
+        var readings = new List<PlugMiniReading>();
+        if (toUtc <= fromUtc)
+        {
+            return readings;
+        }
+
+        var interval = TimeSpan.FromMinutes(ReadingIntervalMinutes);
+        var byDevice = events.GroupBy(e => e.DeviceId);
+
+        foreach (var group in byDevice)
+        {
+            var device = devices.FirstOrDefault(d => d.Id == group.Key);
+            if (device is null)
+            {
+                continue;
+            }
+
+            var timeline = group.OrderBy(e => e.OccurredAtUtc).ToList();
+            var factor = PowerFactor(device.DeviceType);
+
+            // State before the window opens: whatever the last event prior to it said.
+            // Without this a run that starts on the previous day reads as standby until
+            // the next switch, which is the same hole this method exists to close.
+            var index = 0;
+            var running = false;
+            while (index < timeline.Count && timeline[index].OccurredAtUtc < fromUtc)
+            {
+                running = timeline[index].State.Equals("on", StringComparison.OrdinalIgnoreCase);
+                index++;
+            }
+
+            for (var at = AlignToInterval(fromUtc, interval); at < toUtc; at += interval)
+            {
+                while (index < timeline.Count && timeline[index].OccurredAtUtc <= at)
+                {
+                    running = timeline[index].State.Equals("on", StringComparison.OrdinalIgnoreCase);
+                    index++;
+                }
+
+                var watts = running
+                    ? Wobble(RunningWatts(device.DeviceType), device.Id, at)
+                    : StandbyWatts;
+                var volts = Math.Round(Wobble(NominalVolts, device.Id, at.AddSeconds(1)), 1);
+
+                // The plug measures volts and amps; the watts it reports separately are the
+                // real power. Deriving the current from the real figure and the power factor
+                // keeps the three columns telling one consistent story, which is what makes
+                // the apparent-versus-real distinction visible in the demo at all.
+                var apparent = watts / factor;
+                readings.Add(new PlugMiniReading
+                {
+                    HouseholdId = householdId,
+                    DeviceId = device.Id,
+                    VoltageV = volts,
+                    CurrentMa = Math.Round(apparent / volts * 1000.0, 0),
+                    DailyEnergyWh = Math.Round(watts, 2),
+                    UsageMinutesToday = null,
+                    ApproxWatts = Math.Round(apparent, 2),
+                    OccurredAtUtc = at,
+                    ReceivedAtUtc = at,
+                    PublishedToStreamAtUtc = null
+                });
+            }
+        }
+
+        return [.. readings.OrderBy(r => r.OccurredAtUtc)];
+    }
+
+    private static DateTimeOffset AlignToInterval(DateTimeOffset at, TimeSpan interval)
+    {
+        var ticks = at.UtcTicks - (at.UtcTicks % interval.Ticks);
+        var aligned = new DateTimeOffset(ticks, TimeSpan.Zero);
+        return aligned < at ? aligned + interval : aligned;
+    }
+
+    /// <summary>
+    /// A deterministic few percent either side of a nominal value, so the trace reads as a
+    /// measurement rather than a constant.
+    ///
+    /// Kept well inside the quarter-swing the poller treats as a different appliance being
+    /// switched on, so the wobble never manufactures an event the resident did not cause.
+    /// Derived from the device and the instant rather than a running PRNG, so a top-up
+    /// regenerates exactly what the initial seed would have written.
+    /// </summary>
+    private static double Wobble(double nominal, Guid deviceId, DateTimeOffset at)
+    {
+        var seed = HashCode.Combine(deviceId, at.ToUnixTimeSeconds());
+        var unit = (seed & 0xFFFF) / 65535.0;
+        return Math.Round(nominal * (1.0 + ((unit - 0.5) * 0.08)), 2);
     }
 }
