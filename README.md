@@ -9,7 +9,7 @@
 
 📝 開発記録（Qiita）: [離れて暮らす高齢の家族を見守るサービスを作った ― 本人は「エアコンつけて」、家族は LINE で様子がわかる（Azure + Microsoft Fabric + OrcaRouter）](https://qiita.com/monoqlo78/items/27ea5bfa760bd8e3c3b7) — 同じ内容はリポジトリ内の [docs/ARTICLE.md](docs/ARTICLE.md) にもあります。
 
-🎬 デモ動画（3分27秒・ナレーション＋字幕入り・気温×電力と AI の回答まで通しで収録）: 原本は [docs/demo/mimamoritai-demo.mp4](docs/demo/mimamoritai-demo.mp4)、収録内容の一覧は [docs/demo/README.md](docs/demo/README.md) にあります。YouTube 版（https://youtu.be/TnM-RHFZ_Lc ）は、音声操作と安全確認を収めた先行版（3分11秒 / [docs/demo/mimamoritai-demo-voice-safety.mp4](docs/demo/mimamoritai-demo-voice-safety.mp4)）です。
+🎬 デモ動画（5分51秒・ナレーション＋字幕入り・気温×電力と AI の回答まで通しで収録）: 原本は [docs/demo/mimamoritai-demo.mp4](docs/demo/mimamoritai-demo.mp4)、収録内容の一覧は [docs/demo/README.md](docs/demo/README.md) にあります。YouTube 版（https://youtu.be/TnM-RHFZ_Lc ）は、音声操作と安全確認を収めた先行版（3分11秒 / [docs/demo/mimamoritai-demo-voice-safety.mp4](docs/demo/mimamoritai-demo-voice-safety.mp4)）です。
 
 ---
 

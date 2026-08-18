@@ -16,7 +16,7 @@
 
 ダッシュボードに住んでいる3Dマスコットの「ミマモ」です。**話しかけると反応します**。これも既製の素材ではなく、**自作の MCP サーバー**で Blender を動かして自分でモデリングしました（6章）。
 
-▶ **通しのデモ動画（4分51秒・ナレーション＋字幕入り）**: 原本は [docs/demo/mimamoritai-demo.mp4](https://github.com/monoqlo78/mimamoritai-careroute-ai/blob/main/docs/demo/mimamoritai-demo.mp4)。YouTube 版（https://youtu.be/TnM-RHFZ_Lc ）は音声操作と安全確認を収めた先行版です
+▶ **通しのデモ動画（5分51秒・ナレーション＋字幕入り）**: 原本は [docs/demo/mimamoritai-demo.mp4](https://github.com/monoqlo78/mimamoritai-careroute-ai/blob/main/docs/demo/mimamoritai-demo.mp4)。YouTube 版（https://youtu.be/TnM-RHFZ_Lc ）は音声操作と安全確認を収めた先行版です
 
 この記事は「作ったもの紹介」半分、「壊れ方の記録」半分です。とくに後半の**沈黙して壊れた4つの障害**は、同じ構成を組む人には役に立つと思います。
 
