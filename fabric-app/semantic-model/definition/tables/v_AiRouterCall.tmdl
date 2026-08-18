@@ -1,0 +1,104 @@
+table v_AiRouterCall
+	lineageTag: ef33a00e-d969-5027-891d-3e129c2d1d30
+
+	column 'AiCallKey'
+		dataType: string
+		isHidden
+		lineageTag: 14fb6e63-1218-5d94-b374-c894a0c61b57
+		summarizeBy: none
+		sourceColumn: AiCallKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column '用途'
+		dataType: string
+		lineageTag: 74187fbe-167f-56a2-82de-e9312ecb1e3c
+		summarizeBy: none
+		sourceColumn: 用途
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'ルーター'
+		dataType: string
+		lineageTag: 15b7e84e-9e7f-5375-8744-73c833d41fd5
+		summarizeBy: none
+		sourceColumn: ルーター
+
+		annotation SummarizationSetBy = Automatic
+
+	column '実際のモデル'
+		dataType: string
+		lineageTag: 8b8a06fd-f99e-5476-a2ca-07690550a5b4
+		summarizeBy: none
+		sourceColumn: 実際のモデル
+
+		annotation SummarizationSetBy = Automatic
+
+	column '呼び出し回数'
+		dataType: int64
+		lineageTag: 0cac6a34-90bd-5816-bcea-87f33cd46ac5
+		summarizeBy: sum
+		sourceColumn: 呼び出し回数
+
+		annotation SummarizationSetBy = Automatic
+
+	column '成功回数'
+		dataType: int64
+		lineageTag: fa7f0194-12c7-596d-9a91-bfed926608b8
+		summarizeBy: sum
+		sourceColumn: 成功回数
+
+		annotation SummarizationSetBy = Automatic
+
+	column '失敗回数'
+		dataType: int64
+		lineageTag: 158dff0a-8efb-5030-9c84-ac0560a4b3d2
+		summarizeBy: sum
+		sourceColumn: 失敗回数
+
+		annotation SummarizationSetBy = Automatic
+
+	column '平均応答ms'
+		dataType: decimal
+		lineageTag: c8e392e2-9050-5d59-9008-c636c5e68797
+		summarizeBy: average
+		sourceColumn: 平均応答ms
+
+		annotation SummarizationSetBy = Automatic
+
+	column '最終呼び出し日時'
+		dataType: dateTime
+		formatString: yyyy/MM/dd
+		lineageTag: c710f476-11f9-511c-8057-5d757c186188
+		summarizeBy: none
+		sourceColumn: 最終呼び出し日時
+
+		annotation SummarizationSetBy = Automatic
+
+	column '最終呼び出し日'
+		dataType: dateTime
+		formatString: yyyy/MM/dd
+		lineageTag: 8be7413f-e8c8-55da-9435-5c5723a03dab
+		summarizeBy: none
+		sourceColumn: 最終呼び出し日
+
+		annotation SummarizationSetBy = Automatic
+
+	measure 'AI呼び出し回数' = SUM('v_AiRouterCall'[呼び出し回数])
+		formatString: #,0
+		lineageTag: 5e1cd0c7-503d-5f94-9f7c-7dc385a72dae
+
+	measure 'AI成功率' = DIVIDE(SUM('v_AiRouterCall'[成功回数]), SUM('v_AiRouterCall'[呼び出し回数]))
+		formatString: 0.0%
+		lineageTag: 3e9c2dff-a400-598d-888c-ba05c6c6a92b
+
+	partition v_AiRouterCall = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("hulcbwod5oduzik4a7tujiuoxu-mcfkjys7bmpufen3kgrt7zjixq.datawarehouse.fabric.microsoft.com", "mimamoritai-admin"),
+				    Data = Source{[Schema="dbo",Item="v_AiRouterCall"]}[Data]
+				in
+				    Data
+
+	annotation PBI_ResultType = Table

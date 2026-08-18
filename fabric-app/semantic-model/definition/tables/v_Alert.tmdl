@@ -1,0 +1,126 @@
+table v_Alert
+	lineageTag: d54e82f7-f8fe-558c-9cdb-b84c98af79bb
+
+	column 'AlertKey'
+		dataType: string
+		isHidden
+		lineageTag: 579208ee-3d2e-50f3-bddf-89265120a0db
+		summarizeBy: none
+		sourceColumn: AlertKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'HouseholdId'
+		dataType: string
+		lineageTag: 7342c13f-0bf4-572a-b4d9-8268edab481f
+		summarizeBy: none
+		sourceColumn: HouseholdId
+
+		annotation SummarizationSetBy = Automatic
+
+	column '世帯名'
+		dataType: string
+		lineageTag: a9879355-27b4-5844-8f6e-d13c71be6714
+		summarizeBy: none
+		sourceColumn: 世帯名
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'リスク'
+		dataType: string
+		lineageTag: 89584b3e-efe5-5042-a239-cf90a702a9ee
+		summarizeBy: none
+		sourceColumn: リスク
+		sortByColumn: 'リスク順'
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'リスク順'
+		dataType: int64
+		isHidden
+		lineageTag: 4294102b-6b28-56e7-86d8-e4414680cb7e
+		summarizeBy: none
+		sourceColumn: リスク順
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'スコア'
+		dataType: int64
+		lineageTag: b4525064-c920-5edd-a288-989f84644624
+		summarizeBy: sum
+		sourceColumn: スコア
+
+		annotation SummarizationSetBy = Automatic
+
+	column '理由'
+		dataType: string
+		lineageTag: ae027d66-20a5-5e05-a619-177bae9383f8
+		summarizeBy: none
+		sourceColumn: 理由
+
+		annotation SummarizationSetBy = Automatic
+
+	column '送信成功'
+		dataType: boolean
+		lineageTag: 47063a9d-aec8-55d7-9e9b-c51e5edb32ed
+		summarizeBy: none
+		sourceColumn: 送信成功
+
+		annotation SummarizationSetBy = Automatic
+
+	column '失敗フラグ'
+		dataType: int64
+		lineageTag: f71c3b1a-35a4-5faf-a9b3-df1077058306
+		summarizeBy: sum
+		sourceColumn: 失敗フラグ
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'エラー'
+		dataType: string
+		lineageTag: 731f52b1-b932-54f6-8468-01d4cd3cf093
+		summarizeBy: none
+		sourceColumn: エラー
+
+		annotation SummarizationSetBy = Automatic
+
+	column '送信日時'
+		dataType: dateTime
+		formatString: yyyy/MM/dd
+		lineageTag: 25fad0d8-90b2-5e6d-b99e-e7edcfc9a59e
+		summarizeBy: none
+		sourceColumn: 送信日時
+
+		annotation SummarizationSetBy = Automatic
+
+	column '送信日'
+		dataType: dateTime
+		formatString: yyyy/MM/dd
+		lineageTag: 2a148c23-5149-5429-b52e-ff165583395f
+		summarizeBy: none
+		sourceColumn: 送信日
+
+		annotation SummarizationSetBy = Automatic
+
+	measure '通知件数' = COUNTROWS('v_Alert')
+		formatString: #,0
+		lineageTag: ef6d0d4b-81aa-59af-8a43-b10657f1401d
+
+	measure '通知失敗件数' = SUM('v_Alert'[失敗フラグ])
+		formatString: #,0
+		lineageTag: 65c000f2-74d4-5fca-95da-870e67354ce6
+
+	measure '通知失敗率' = DIVIDE(SUM('v_Alert'[失敗フラグ]), COUNTROWS('v_Alert'))
+		formatString: 0.0%
+		lineageTag: 4c636944-fc30-5dfd-b4e2-acb67a704e14
+
+	partition v_Alert = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("hulcbwod5oduzik4a7tujiuoxu-mcfkjys7bmpufen3kgrt7zjixq.datawarehouse.fabric.microsoft.com", "mimamoritai-admin"),
+				    Data = Source{[Schema="dbo",Item="v_Alert"]}[Data]
+				in
+				    Data
+
+	annotation PBI_ResultType = Table

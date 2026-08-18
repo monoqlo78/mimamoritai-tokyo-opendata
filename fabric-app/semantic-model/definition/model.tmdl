@@ -1,0 +1,14 @@
+model Model
+	culture: ja-JP
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	discourageImplicitMeasures
+	sourceQueryCulture: ja-JP
+
+	annotation PBI_QueryOrder = ["v_Household","v_Alert","v_ActivityHourly","v_OutdoorHourly","v_AiRouterCall","v_Date"]
+
+ref table v_Household
+ref table v_Alert
+ref table v_ActivityHourly
+ref table v_OutdoorHourly
+ref table v_AiRouterCall
+ref table v_Date

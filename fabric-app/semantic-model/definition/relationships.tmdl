@@ -1,0 +1,11 @@
+relationship 6b1bad0a-8857-5692-87bc-ebed8660a5bc
+	fromColumn: v_ActivityHourly.'日付'
+	toColumn: v_Date.'日付'
+
+relationship ab040783-bf56-5c9a-8cb3-93b74dfb992d
+	fromColumn: v_OutdoorHourly.'日付'
+	toColumn: v_Date.'日付'
+
+relationship a52a507d-2f74-531d-b50b-678979af7356
+	fromColumn: v_Alert.'送信日'
+	toColumn: v_Date.'日付'

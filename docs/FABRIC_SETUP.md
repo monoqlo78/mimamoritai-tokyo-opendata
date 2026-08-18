@@ -288,10 +288,13 @@ dotnet user-secrets set "Fabric:McpUrl" "<your-fabric-data-agent-mcp-url>"
 
 運用コンソール（Rayfin）が読み書きしている Fabric SQL データベースは、そのまま
 Power BI から使えます。Fabric SQL データベースは OneLake へ自動でミラーされ、
-SQL 分析エンドポイントと既定のセマンティックモデルが自動生成されるためです。
-新しくデータの箱を用意する必要はありません。
+読み取り専用の **SQL 分析エンドポイント**が付いてくるためです。新しくデータの箱を
+用意する必要はありません。
 
-ただし既定のモデルをそのまま使うと困ります。Rayfin のエンティティ定義
+ただしセマンティックモデルは自動では作られません。ワークスペースを API で確認した
+ところ 0 件でした（`GET /v1/workspaces/{id}/semanticModels`）。自分で作ります。
+
+作るときも、テーブルを直接指すと困ります。Rayfin のエンティティ定義
 （`fabric-app/rayfin/data/*.ts`）は数値も日時も `@text()`、つまり NVARCHAR で
 持っているからです。コンソールは値をそのまま文字として描くのでこれで足りて
 いるのですが、Power BI から見ると全列がテキストになり、
@@ -307,25 +310,67 @@ SQL 分析エンドポイントと既定のセマンティックモデルが自�
 
 ```
 Fabric SQL データベース（dbo.HouseholdSnapshots ほか / 全部テキスト）
+        ↓  OneLake へ自動ミラー（テーブルのみ。ビューは運ばれない）
+SQL 分析エンドポイント
         ↓  semantic-model-views.sql  ← TRY_CONVERT で型を復元
 ビュー（dbo.v_Household / v_ActivityHourly / v_OutdoorHourly / v_Alert /
         v_AiRouterCall / v_Date）
-        ↓
-カスタムセマンティックモデル → Power BI レポート
+        ↓  scripts/gen-semantic-model.py → scripts/deploy-semantic-model.ps1
+セマンティックモデル（DirectQuery）→ Power BI レポート
 ```
+
+### ビューは 2 か所に作る
+
+ここが一番はまりやすいところです。**ビューは OneLake にミラーされません。**
+ミラーされるのはベーステーブルだけです。実際に分析エンドポイント側の
+`INFORMATION_SCHEMA.TABLES` を見ると、SQL データベースに作ったビューは
+1 つも映っていませんでした。
+
+したがって同じ `semantic-model-views.sql` を 2 つのエンドポイントに流します。
+
+| 流す先 | 何のため |
+| --- | --- |
+| SQL データベース | 運用コンソールや直接の SQL 照会から使うため |
+| SQL 分析エンドポイント | Power BI / セマンティックモデルから見えるようにするため |
+
+分析エンドポイントは書き込み不可に見えますが、それはミラーされたテーブルの話で、
+ビューは作れます（実測済み）。
+
+分析エンドポイントのホスト名は、ポータルの Lakehouse → 設定 → SQL 分析
+エンドポイントの接続文字列から取れます。`....datawarehouse.fabric.microsoft.com`
+のようにドメインが `datawarehouse` になっているのが分析エンドポイント側、
+`database` になっているのが SQL データベース側です。
 
 ### 手順
 
-1. Fabric ポータルで対象の SQL データベースを開く
-2. 「新しいクエリ」に `fabric-app/scripts/semantic-model-views.sql` を貼って実行
+1. Fabric ポータルで対象の SQL データベースを開き、「新しいクエリ」に
+   `fabric-app/scripts/semantic-model-views.sql` を貼って実行
    （`CREATE OR ALTER` なので何度流しても同じ結果になります）
-3. モデリング → 新しいセマンティックモデル → `v_` で始まる 6 つのビューを選択
-4. `v_Date` を「日付テーブルとしてマーク」する
-5. `v_Date[日付]` から `v_ActivityHourly[日付]` `v_OutdoorHourly[日付]`
-   `v_Alert[送信日]` へ一対多のリレーションを張る
+2. 同じスクリプトを **SQL 分析エンドポイント**でも実行する
+3. セマンティックモデルを配置する
 
-既定のセマンティックモデルは触りません。Rayfin がスキーマを再適用したときに
-上書きされる可能性があるためです。
+   ```powershell
+   python scripts/gen-semantic-model.py       # TMDL を生成
+   pwsh ./scripts/deploy-semantic-model.ps1   # Fabric へ配置
+   ```
+
+   TMDL は手で書かずに生成します。ビューの列を足したり型を変えたりしたときに、
+   モデル側の定義とずれるのを防ぐためです。
+
+4. Power BI から「MimamoriTai」セマンティックモデルを選んでレポートを作る
+
+ポータルの GUI で作りたい場合は、3 の代わりに 分析エンドポイント →
+「新しいセマンティックモデル」で `v_` で始まる 6 つのビューを選び、`v_Date` を
+「日付テーブルとしてマーク」してから、`v_Date[日付]` → `v_ActivityHourly[日付]`
+`v_OutdoorHourly[日付]` `v_Alert[送信日]` に一対多のリレーションを張ります。
+スクリプトはこれと同じ構成を TMDL で組み立てているだけです。
+
+### DirectQuery にした理由
+
+取り込み（Import）ではなく DirectQuery にしています。コンソールが数分おきに
+データを書き換えるので、見るたびに再取り込みの完了を待ちたくないためです。
+ビューの上にモデルを載せている以上、Direct Lake は使えません（Direct Lake は
+Delta テーブルを直接読む方式で、ビューには効きません）。
 
 ### 日付テーブルを必ず作る理由
 
@@ -366,6 +411,11 @@ Power BI の `SUM` / `AVERAGE` は NULL を無視するため、欠測が 0 と�
 
 - Fabric のキャパシティが停止していると SQL 分析エンドポイントに接続できません。
   先にキャパシティを再開してください。
+- ビューを直したら、**2 つのエンドポイントの両方**に流し直してください。片方だけ
+  直すと、コンソールと Power BI で違う数字が出ます。
+- 分析エンドポイントはミラーなので、当日ぶんの行数が SQL データベースより
+  わずかに少ないことがあります（実測で 318 行 → 298 行）。異常ではなく
+  反映待ちです。過去日の集計値は一致します。
 - `v_Household` は現在値の上書きなので、世帯ごとの推移を追いたい場合は
   `v_ActivityHourly` を集計してください。
 

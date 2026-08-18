@@ -1,0 +1,178 @@
+table v_Household
+	lineageTag: e6464bdc-64de-51db-85ea-dda7c5cd9196
+
+	column 'HouseholdKey'
+		dataType: string
+		isHidden
+		lineageTag: c4a926bf-be18-501b-90fc-f38bc63d66a6
+		summarizeBy: none
+		sourceColumn: HouseholdKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'HouseholdId'
+		dataType: string
+		lineageTag: 952f236c-7cdd-5e56-a9a1-9d4cf773fe2e
+		summarizeBy: none
+		sourceColumn: HouseholdId
+
+		annotation SummarizationSetBy = Automatic
+
+	column '世帯名'
+		dataType: string
+		lineageTag: e8e299a3-7d10-5a3b-95f1-95323807af1a
+		summarizeBy: none
+		sourceColumn: 世帯名
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'データ種別'
+		dataType: string
+		lineageTag: cf96934d-1990-5711-9c45-7275563be295
+		summarizeBy: none
+		sourceColumn: データ種別
+
+		annotation SummarizationSetBy = Automatic
+
+	column '家族人数'
+		dataType: int64
+		lineageTag: df3d1ce1-da8a-527b-b032-6dd2788d96da
+		summarizeBy: sum
+		sourceColumn: 家族人数
+
+		annotation SummarizationSetBy = Automatic
+
+	column '見守り対象人数'
+		dataType: int64
+		lineageTag: 939f3788-acaa-5ab6-b15a-33aa628b0a54
+		summarizeBy: sum
+		sourceColumn: 見守り対象人数
+
+		annotation SummarizationSetBy = Automatic
+
+	column '機器台数'
+		dataType: int64
+		lineageTag: 8b00d0ae-53ab-50aa-8afb-89caec960e30
+		summarizeBy: sum
+		sourceColumn: 機器台数
+
+		annotation SummarizationSetBy = Automatic
+
+	column '最終イベント日時UTC'
+		dataType: dateTime
+		formatString: yyyy/MM/dd
+		lineageTag: 176c0d86-90f3-5649-87f1-5b0355d0fa92
+		summarizeBy: none
+		sourceColumn: 最終イベント日時UTC
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'SwitchBot接続状態'
+		dataType: string
+		lineageTag: 4d165d1a-2b34-5366-b9f0-529c474b4798
+		summarizeBy: none
+		sourceColumn: SwitchBot接続状態
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'SwitchBotエラー'
+		dataType: string
+		lineageTag: 11cf6220-d2fb-5ec2-b7b7-8e60f33cf18a
+		summarizeBy: none
+		sourceColumn: SwitchBotエラー
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'LINE通知先数'
+		dataType: int64
+		lineageTag: 0a628176-18c1-5751-b4d7-55cb7e3a2021
+		summarizeBy: sum
+		sourceColumn: LINE通知先数
+
+		annotation SummarizationSetBy = Automatic
+
+	column '期間内アラート数'
+		dataType: int64
+		lineageTag: 042871ad-5324-59eb-baf4-17e48b5f192b
+		summarizeBy: sum
+		sourceColumn: 期間内アラート数
+
+		annotation SummarizationSetBy = Automatic
+
+	column '期間内通知失敗数'
+		dataType: int64
+		lineageTag: a5c72deb-ab2a-5cf2-9f10-8aabb9add221
+		summarizeBy: sum
+		sourceColumn: 期間内通知失敗数
+
+		annotation SummarizationSetBy = Automatic
+
+	column '直近リスク'
+		dataType: string
+		lineageTag: 2207a2f0-8cd0-5e23-816a-8a800cc7513f
+		summarizeBy: none
+		sourceColumn: 直近リスク
+		sortByColumn: '直近リスク順'
+
+		annotation SummarizationSetBy = Automatic
+
+	column '直近リスク順'
+		dataType: int64
+		isHidden
+		lineageTag: 35b3ee46-f938-5d56-9452-637f445be2e5
+		summarizeBy: none
+		sourceColumn: 直近リスク順
+
+		annotation SummarizationSetBy = Automatic
+
+	column '要対応'
+		dataType: boolean
+		lineageTag: c6dde610-015a-548a-a088-a59fc2d3cc61
+		summarizeBy: none
+		sourceColumn: 要対応
+
+		annotation SummarizationSetBy = Automatic
+
+	column '本日電力量Wh'
+		dataType: decimal
+		lineageTag: 8edaae5e-77af-5e07-8ce7-1b5bea4ea36e
+		summarizeBy: sum
+		sourceColumn: 本日電力量Wh
+
+		annotation SummarizationSetBy = Automatic
+
+	column '平常時電力量Wh'
+		dataType: decimal
+		lineageTag: 94293cdf-f116-54c8-a914-ad9de0535efa
+		summarizeBy: sum
+		sourceColumn: 平常時電力量Wh
+
+		annotation SummarizationSetBy = Automatic
+
+	column '電力傾向'
+		dataType: string
+		lineageTag: 7635f9b5-b2a7-576b-a269-376af5353f81
+		summarizeBy: none
+		sourceColumn: 電力傾向
+
+		annotation SummarizationSetBy = Automatic
+
+	column '取得日時'
+		dataType: dateTime
+		formatString: yyyy/MM/dd
+		lineageTag: 6131f65a-5ffe-5286-a03f-fbbae5205859
+		summarizeBy: none
+		sourceColumn: 取得日時
+
+		annotation SummarizationSetBy = Automatic
+
+	partition v_Household = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("hulcbwod5oduzik4a7tujiuoxu-mcfkjys7bmpufen3kgrt7zjixq.datawarehouse.fabric.microsoft.com", "mimamoritai-admin"),
+				    Data = Source{[Schema="dbo",Item="v_Household"]}[Data]
+				in
+				    Data
+
+	annotation PBI_ResultType = Table

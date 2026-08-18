@@ -1,0 +1,64 @@
+table v_Date
+	lineageTag: 9c2b5871-991a-5103-9e3b-5b8d1304d1bf
+	dataCategory: Time
+
+	column '日付'
+		dataType: dateTime
+		isKey
+		formatString: yyyy/MM/dd
+		lineageTag: 7b6d3f1b-28d5-5053-911b-53fc36944866
+		summarizeBy: none
+		sourceColumn: 日付
+
+		annotation SummarizationSetBy = Automatic
+
+	column '年'
+		dataType: int64
+		lineageTag: 4e82a52a-d307-5faa-9f13-f0793987eb28
+		summarizeBy: none
+		sourceColumn: 年
+
+		annotation SummarizationSetBy = Automatic
+
+	column '月'
+		dataType: int64
+		lineageTag: 095d69e3-03ac-53b7-bdf2-6ba4c1794213
+		summarizeBy: none
+		sourceColumn: 月
+
+		annotation SummarizationSetBy = Automatic
+
+	column '日'
+		dataType: int64
+		lineageTag: ab6eefa1-7c2e-55af-863b-2891cb49c21f
+		summarizeBy: none
+		sourceColumn: 日
+
+		annotation SummarizationSetBy = Automatic
+
+	column '曜日番号'
+		dataType: int64
+		lineageTag: 5984abf0-8d23-5e3e-be30-a9ff226e4927
+		summarizeBy: none
+		sourceColumn: 曜日番号
+
+		annotation SummarizationSetBy = Automatic
+
+	column '年月'
+		dataType: string
+		lineageTag: 0f822133-c213-592c-b22b-e7052bfdd472
+		summarizeBy: none
+		sourceColumn: 年月
+
+		annotation SummarizationSetBy = Automatic
+
+	partition v_Date = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("hulcbwod5oduzik4a7tujiuoxu-mcfkjys7bmpufen3kgrt7zjixq.datawarehouse.fabric.microsoft.com", "mimamoritai-admin"),
+				    Data = Source{[Schema="dbo",Item="v_Date"]}[Data]
+				in
+				    Data
+
+	annotation PBI_ResultType = Table

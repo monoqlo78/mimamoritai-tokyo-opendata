@@ -1,0 +1,128 @@
+table v_ActivityHourly
+	lineageTag: 9046808c-cf60-58b9-bfb3-c89a2c360df5
+
+	column 'ActivityKey'
+		dataType: string
+		isHidden
+		lineageTag: c9dfaa38-8ff8-556e-a0c4-9dce3f780a10
+		summarizeBy: none
+		sourceColumn: ActivityKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'HouseholdId'
+		dataType: string
+		lineageTag: 1f72a461-c9f4-519f-ae4a-9369f3b98a39
+		summarizeBy: none
+		sourceColumn: HouseholdId
+
+		annotation SummarizationSetBy = Automatic
+
+	column '世帯名'
+		dataType: string
+		lineageTag: a10dc3a0-cfa9-5454-bf20-e5a97aa2ae94
+		summarizeBy: none
+		sourceColumn: 世帯名
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'DeviceId'
+		dataType: string
+		lineageTag: 2d27e296-b59c-5126-a98f-3e8de81780c9
+		summarizeBy: none
+		sourceColumn: DeviceId
+
+		annotation SummarizationSetBy = Automatic
+
+	column '機器名'
+		dataType: string
+		lineageTag: 6ec9b769-eaf3-5bc8-aa7b-f4c5b3ec726e
+		summarizeBy: none
+		sourceColumn: 機器名
+
+		annotation SummarizationSetBy = Automatic
+
+	column '機器種別'
+		dataType: string
+		lineageTag: b700acd0-d555-5f94-851c-cebc9d06a1c7
+		summarizeBy: none
+		sourceColumn: 機器種別
+
+		annotation SummarizationSetBy = Automatic
+
+	column '取得元'
+		dataType: string
+		lineageTag: f4825e4f-18bc-51b6-b797-ac051d3a8271
+		summarizeBy: none
+		sourceColumn: 取得元
+
+		annotation SummarizationSetBy = Automatic
+
+	column '時刻'
+		dataType: dateTime
+		formatString: yyyy/MM/dd
+		lineageTag: 518a271f-0b97-5663-95b4-0359e7ecfb14
+		summarizeBy: none
+		sourceColumn: 時刻
+
+		annotation SummarizationSetBy = Automatic
+
+	column '日付'
+		dataType: dateTime
+		formatString: yyyy/MM/dd
+		lineageTag: 2e0eabbb-4156-5c58-9335-aa7a234849f8
+		summarizeBy: none
+		sourceColumn: 日付
+
+		annotation SummarizationSetBy = Automatic
+
+	column '時'
+		dataType: int64
+		lineageTag: 62a85dfe-9341-5380-9d41-dc5298a1c6e1
+		summarizeBy: none
+		sourceColumn: 時
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'イベント数'
+		dataType: int64
+		lineageTag: 363fcbdc-3692-553a-88f6-49d36362d916
+		summarizeBy: sum
+		sourceColumn: イベント数
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'ON回数'
+		dataType: int64
+		lineageTag: ead658dc-00f3-56ad-acb4-a82ade9605e0
+		summarizeBy: sum
+		sourceColumn: ON回数
+
+		annotation SummarizationSetBy = Automatic
+
+	column '電力量Wh'
+		dataType: decimal
+		lineageTag: 693a678d-0d9d-5ff3-9372-2e41a48b1554
+		summarizeBy: sum
+		sourceColumn: 電力量Wh
+
+		annotation SummarizationSetBy = Automatic
+
+	measure '総電力量Wh' = SUM('v_ActivityHourly'[電力量Wh])
+		formatString: #,0.0
+		lineageTag: 52400761-56e3-5862-b946-66542f55148a
+
+	measure '計測済み時間数' = COUNTROWS(FILTER('v_ActivityHourly', NOT ISBLANK('v_ActivityHourly'[電力量Wh])))
+		formatString: #,0
+		lineageTag: 1ce303e5-1481-5699-bec6-d2c12b4f1947
+
+	partition v_ActivityHourly = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("hulcbwod5oduzik4a7tujiuoxu-mcfkjys7bmpufen3kgrt7zjixq.datawarehouse.fabric.microsoft.com", "mimamoritai-admin"),
+				    Data = Source{[Schema="dbo",Item="v_ActivityHourly"]}[Data]
+				in
+				    Data
+
+	annotation PBI_ResultType = Table

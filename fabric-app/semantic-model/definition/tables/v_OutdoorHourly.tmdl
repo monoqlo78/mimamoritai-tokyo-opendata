@@ -1,0 +1,136 @@
+table v_OutdoorHourly
+	lineageTag: d3912a87-c609-5563-8cfc-045362529b8c
+
+	column 'OutdoorKey'
+		dataType: string
+		isHidden
+		lineageTag: b3338f05-4b8a-5a42-93c4-acb801d74b69
+		summarizeBy: none
+		sourceColumn: OutdoorKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column '観測点コード'
+		dataType: string
+		lineageTag: 2eaa6faa-8263-5c4c-8920-456c1475e5ef
+		summarizeBy: none
+		sourceColumn: 観測点コード
+
+		annotation SummarizationSetBy = Automatic
+
+	column '地域名'
+		dataType: string
+		lineageTag: 0c9a9e8d-739e-56fd-b512-1f72dbdf8c3d
+		summarizeBy: none
+		sourceColumn: 地域名
+
+		annotation SummarizationSetBy = Automatic
+
+	column '時刻'
+		dataType: dateTime
+		formatString: yyyy/MM/dd
+		lineageTag: 490c2e12-7aa8-5007-a57d-372536a1dd28
+		summarizeBy: none
+		sourceColumn: 時刻
+
+		annotation SummarizationSetBy = Automatic
+
+	column '日付'
+		dataType: dateTime
+		formatString: yyyy/MM/dd
+		lineageTag: b589cd41-5397-505a-9bde-38289a7ae8cd
+		summarizeBy: none
+		sourceColumn: 日付
+
+		annotation SummarizationSetBy = Automatic
+
+	column '時'
+		dataType: int64
+		lineageTag: d1f4f1c1-4160-574e-ba19-e18899385389
+		summarizeBy: none
+		sourceColumn: 時
+
+		annotation SummarizationSetBy = Automatic
+
+	column '気温C'
+		dataType: decimal
+		lineageTag: 49656445-125d-5d58-a1c8-64a6a0f99962
+		summarizeBy: average
+		sourceColumn: 気温C
+
+		annotation SummarizationSetBy = Automatic
+
+	column '最低気温C'
+		dataType: decimal
+		lineageTag: 99aaf5a2-8bdb-544b-8d52-a5f05501e10c
+		summarizeBy: average
+		sourceColumn: 最低気温C
+
+		annotation SummarizationSetBy = Automatic
+
+	column '最高気温C'
+		dataType: decimal
+		lineageTag: a1a50236-68c5-5ea6-9cca-c2102a76e78c
+		summarizeBy: average
+		sourceColumn: 最高気温C
+
+		annotation SummarizationSetBy = Automatic
+
+	column '湿度Pct'
+		dataType: decimal
+		lineageTag: 1c0a94c1-a977-5b67-b074-f3fbfc5beb43
+		summarizeBy: average
+		sourceColumn: 湿度Pct
+
+		annotation SummarizationSetBy = Automatic
+
+	column '暑さ指数WBGT'
+		dataType: decimal
+		lineageTag: 07febd2a-60bc-550d-929e-7ccad4b2e9de
+		summarizeBy: average
+		sourceColumn: 暑さ指数WBGT
+
+		annotation SummarizationSetBy = Automatic
+
+	column '熱中症警戒度'
+		dataType: int64
+		lineageTag: c7b62cbd-afd6-59f5-8d60-d287b8e51387
+		summarizeBy: average
+		sourceColumn: 熱中症警戒度
+
+		annotation SummarizationSetBy = Automatic
+
+	column '低体温警戒度'
+		dataType: int64
+		lineageTag: 30de1a30-b66a-51c9-ae46-ddc43c6df3e1
+		summarizeBy: average
+		sourceColumn: 低体温警戒度
+
+		annotation SummarizationSetBy = Automatic
+
+	column '観測件数'
+		dataType: int64
+		lineageTag: 361b8f1b-7309-56b9-85c5-f48ef53969fb
+		summarizeBy: average
+		sourceColumn: 観測件数
+
+		annotation SummarizationSetBy = Automatic
+
+	measure '平均気温C' = AVERAGE('v_OutdoorHourly'[気温C])
+		formatString: #,0.0
+		lineageTag: 1d322c4a-65d7-59cc-b306-1e81aeffa20c
+
+	measure '最高暑さ指数' = MAX('v_OutdoorHourly'[暑さ指数WBGT])
+		formatString: #,0.0
+		lineageTag: ba3d0141-7896-5963-bb6d-ab8243b4dc2d
+
+	partition v_OutdoorHourly = m
+		mode: directQuery
+		source =
+				let
+				    Source = Sql.Database("hulcbwod5oduzik4a7tujiuoxu-mcfkjys7bmpufen3kgrt7zjixq.datawarehouse.fabric.microsoft.com", "mimamoritai-admin"),
+				    Data = Source{[Schema="dbo",Item="v_OutdoorHourly"]}[Data]
+				in
+				    Data
+
+	annotation PBI_ResultType = Table
