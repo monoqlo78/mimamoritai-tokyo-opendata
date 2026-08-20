@@ -186,7 +186,10 @@
 | デモ動画（4分51秒） | 収録済み。冒頭にできること三つの宣言と Microsoft Fabric の運用コンソール、終盤にふつうの言葉での家電操作を加えて再収録（8/18）。ナレーション・字幕あり・BGMなし | `docs/demo/mimamoritai-demo.mp4` |
 | 提出用デモ動画（59秒） | フル版から9場面を抜き出し字幕を焼き直し。フォーム規定の60秒以内・音声なし | `docs/demo/mimamoritai-demo-60s.mp4` |
 | 〃 参考：音声操作と安全確認の回 | 収録済み（旧収録・本編に無い挙動の記録） | `docs/demo/mimamoritai-demo-voice-safety.mp4` |
-| 2分プレゼン動画 | **未収録**（2026-08-27（木）19:00 JST に収録） | — |
+| 2分プレゼン動画（画面共有用） | **作成済み**（1分54秒・1920x1080・**音声なし・字幕＝読み上げ台本を焼き込み**。収録では自分が生で話し、これを画面共有する。本編に映像がない **LINE の実画面**を静止画で追加） | `docs/demo/mimamoritai-demo-2min.mp4` |
+| 〃 手元用カンペ（残り秒つき） | 作成済み（同内容＋ REMAIN / ELAPSED 表示。第2画面用） | `docs/demo/mimamoritai-demo-2min-prompter.mp4` |
+| 〃 読み上げ台本 | あり（秒 → 画面 → 話す内容の対応表） | `docs/PITCH_2MIN_VIDEO.md` |
+| First Stage 収録 | **未実施**（2026-08-27（木）19:00 JST / Zoom） | — |
 | 画面キャプチャ3点 | 取得済み（8/16時点） | `docs/captures/` |
 | 開発記録 | 公開済み | `docs/ARTICLE.md`（Qiita 版は `docs/qiita-body.md`） |
 | 使う機器の構成図 | 追加（自作の概念図・公式製品写真は不使用） | `docs/images/hardware.svg` / `docs/images/hardware.png` |

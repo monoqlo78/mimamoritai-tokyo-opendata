@@ -5,7 +5,7 @@
 | 日時 | **2026-08-27（木）19:00–19:30 JST**（30分枠） |
 | 方法 | オンライン（Zoom）／日本語 |
 | 収録するもの | **2分間のプレゼンテーション**（1本） |
-| 使う資料 | `docs/mimamoritai-deck-2min.pdf`（6枚・16:9。フォーム 5-1 に提出済み） |
+| 使う資料 | `docs/mimamoritai-deck-2min.pdf`（6枚・16:9。フォーム 5-1 に提出済み）／**画面共有する動画** `docs/demo/mimamoritai-demo-2min.mp4`（1分54秒・無音・字幕入り。台本は [PITCH_2MIN_VIDEO.md](PITCH_2MIN_VIDEO.md)） |
 | 公開範囲 | **収録映像は First Stage のアーカイブとして YouTube で一般公開されます** |
 | 審査 | この動画をもとに審査。Final Stage へ進む24作品が選出されます |
 
